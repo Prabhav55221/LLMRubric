@@ -24,50 +24,60 @@ class OpenAILLMCaller:
         self.logger = logging.getLogger(__name__)
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def _call_api(self, prompt: str) -> str:
-        response = self.client.chat.completions.create(
-            model=self.config.model,
-            messages=[
-                {"role": "system", "content": "You are an expert at evaluating conversations. Respond only with a number 1-4 corresponding to your choice from the given options."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=self.config.temperature,
-            max_tokens=10
-        )
-        return response.choices[0].message.content
-
-    def _extract_number_from_response(self, response: str) -> Optional[int]:
-        clean_response = response.strip().split()[0]
+    def _call_api(self, prompt: str) -> List[float]:
+        """Call OpenAI API and return probabilities for options 1-4."""
         try:
-            number = int(clean_response)
-            if 1 <= number <= 4:
-                return number
-            self.logger.warning(f"Invalid number in response: {number}")
-            return None
-        except ValueError:
-            self.logger.warning(f"Could not extract number from response: {response}")
-            return None
+            # First get completion to set up context
+            response = self.client.completions.create(
+                model=self.config.model,
+                prompt=prompt,
+                max_tokens=5,
+                temperature=self.config.temperature,
+                logprobs=4,
+                echo=False,
+                stop=None
+            )
+            
+            # Extract logprobs for the tokens "1", "2", "3", "4"
+            token_logprobs = {}
+            for token, logprob in zip(response.choices[0].logprobs.tokens, 
+                                    response.choices[0].logprobs.token_logprobs):
+                if token.strip() in ["1", "2", "3", "4"]:
+                    token_logprobs[token.strip()] = logprob
 
-    def _convert_to_probabilities(self, choice: Optional[int], num_options: int = 4) -> List[float]:
-        if choice is None:
-            return [1.0 / num_options] * num_options
-        
-        probs = [0.1 / (num_options - 1)] * num_options
-        probs[choice - 1] = 0.9
-        return probs
+            # Convert logprobs to probabilities
+            probs = np.zeros(4)
+            logprobs_array = np.array([token_logprobs.get(str(i+1), float('-inf')) 
+                                     for i in range(4)])
+            
+            # Softmax calculation
+            exp_logprobs = np.exp(logprobs_array - np.max(logprobs_array))
+            probs = exp_logprobs / exp_logprobs.sum()
+            
+            # Ensure no zero probabilities (smooth)
+            probs = np.maximum(probs, 1e-7)
+            probs = probs / probs.sum()
+            
+            self.logger.info(f"Generated probabilities: {probs}")
+            return probs.tolist()
+
+        except Exception as e:
+            self.logger.error(f"Error in API call: {e}")
+            # Return uniform distribution in case of error
+            return [0.25, 0.25, 0.25, 0.25]
 
     def __call__(self, prompt: str) -> List[float]:
+        """
+        Get probabilities for each option (1-4) given a prompt.
+        Uses caching to avoid redundant API calls.
+        """
         # Check cache first
         cached_result = self.cache.get(prompt)
         if cached_result is not None:
             return cached_result
 
         try:
-            response_text = self._call_api(prompt)
-            self.logger.info(f"Raw response: {response_text}")
-            
-            choice = self._extract_number_from_response(response_text)
-            probabilities = self._convert_to_probabilities(choice)
+            probabilities = self._call_api(prompt)
             
             # Cache the result
             self.cache.set(prompt, probabilities)
@@ -75,10 +85,9 @@ class OpenAILLMCaller:
             return probabilities
             
         except Exception as e:
-            self.logger.error(f"Error calling OpenAI API: {e}")
+            self.logger.error(f"Error in LLM call: {e}")
             return [0.25, 0.25, 0.25, 0.25]
-        
-# evaluator.py
+
 class LLMEvaluator:
     def __init__(self, rubric_path: str):
         self.rubric = self._load_rubric(rubric_path)
