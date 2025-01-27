@@ -1,0 +1,67 @@
+{
+    "Q1": {
+        "PromptDesc": "In terms of naturalness and tone of the assistant utterances, to what degree are they likely to be produced by an intelligent human in a conversation? Disregard whether they are grounded in the search results.",
+        "Options": ["Unlikely", "Somewhat Unlikely", "Somewhat Likely", "Likely"]
+    },
+
+    "Q2": {
+        "PromptDesc": "If the references are provided, to what degree user's questions can be answered or resolved using the references? The assistant’s responses should not impact your response to this question. If no references are provided in the conversation, please write “NA” for this question.",
+        "Options": ["None of the questions that user has asked could be answered using the reference documents.", 
+        "Less than half of documents that user has asked could be answered using the reference document.", 
+        "Half or more than half of the questions that user has asked could be answered using the reference documents.", 
+        "All the questions the user has asked could be answered with the reference documents."]
+    },
+
+    "Q3": {
+        "PromptDesc": "Independent of what sources are cited in the conversation, to what degree the claims made by the assistant are followed by a citation. If no references are provided in the conversation, please write NA.",
+        "Options": ["None of the claims are followed by a citation.", 
+        "Less than half of the claims are followed by a citation.", 
+        "Half, or more than half of the claims are followed by a citation.", 
+        "All claims are followed by a citation."]
+    },
+
+    "Q4": {
+        "PromptDesc": "What percentage of citations accurately support the claims made in the conversation? If no references are provided in the conversation, please write NA.",
+        "Options": ["None of the citations accurately support the provided claims.", 
+        "Less than half of citations accurately support the provided claims.", 
+        "Half, or more than half of citations accurately support the provided claims.", 
+        "All citations accurately support the provided claims."]
+    },
+
+    "Q5": {
+        "PromptDesc": "To what degree the cited sources are the best candidates among all the provided sources? If no references are provided in the conversation, please write NA.",
+        "Options": ["For all citations, there is a better source to be cited.", 
+        "For more than half of the citations, there is a better source to be cited.", 
+        "For half or less than half of the citations, there is a better source to be cited.", 
+        "The best sources are cited in all cases."]
+    },
+
+    "Q6": {
+        "PromptDesc": "To what degree the content of the assistant utterances is free of redundant elements, such as repetition, overspecification, etc.",
+        "Options": ["The conversation has a large number of redundant elements.", 
+        "The conversation has some redundant elements.", 
+        "The conversation has a few redundant elements.", 
+        "The conversation is completely free of redundant elements."]
+    },
+
+    "Q7": {
+        "PromptDesc": "To what degree the assistant responses are concise?",
+        "Options": ["In all assistant utterances, the responses could have been shorter.", 
+        "In more than half of the assistant utterances, the responses could have been shorter.", 
+        "In half, or less than half of the assistant utterances, the responses could have been shorter.", 
+        "In all assistant utterances, the responses are concise and the utterance length is appropriate."]
+    },
+
+    "Q8": {
+        "PromptDesc": "Do you think the number of exchange turns or back and forth is appropriate given the complexity of the user information need?",
+        "Options": ["No, fewer interactions would be sufficient and would make this conversation more pleasant.", 
+        "No, more interactions are needed for a better conversation experience.", 
+        "Yes, the rate of exchanges between the user and the assistant is reasonable."]
+    },
+
+    "Q0": {
+        "PromptDesc": "Imagine you are the user who had this conversation with the assistant. All in all, how you would rate your overall satisfaction while interacting with the assistant? The higher the rating, the better the experience.",
+        "Options": [1, 2, 3, 4]
+    }
+
+}
