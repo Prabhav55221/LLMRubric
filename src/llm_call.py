@@ -28,22 +28,23 @@ class OpenAILLMCaller:
         """Call OpenAI API and return probabilities for options 1-4."""
         try:
             # First get completion to set up context
-            response = self.client.completions.create(
+            response = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}], 
                 model=self.config.model,
-                prompt=prompt,
-                max_tokens=5,
                 temperature=self.config.temperature,
-                logprobs=4,
-                echo=False,
-                stop=None
-            )
+                max_tokens=4,
+                logprobs=True,
+                top_logprobs=4
+             )  
+
             
             # Extract logprobs for the tokens "1", "2", "3", "4"
             token_logprobs = {}
-            for token, logprob in zip(response.choices[0].logprobs.tokens, 
-                                    response.choices[0].logprobs.token_logprobs):
-                if token.strip() in ["1", "2", "3", "4"]:
-                    token_logprobs[token.strip()] = logprob
+            for i in response.choices[0].logprobs.content[0].top_logprobs:
+                token = i.token
+                logprob = i.logprob
+                if str(token.strip()) in ["1", "2", "3", "4"]:
+                    token_logprobs[token.strip()] = float(logprob)
 
             # Convert logprobs to probabilities
             probs = np.zeros(4)
@@ -92,20 +93,17 @@ class LLMEvaluator:
     def __init__(self, rubric_path: str):
         self.rubric = self._load_rubric(rubric_path)
         self.prompt_template = """
-        You are given a conversation between a user and an intelligent assistant for an enterprise chat scenario. 
-        In some cases, some references and citations are provided to back up the claims made by the intelligent assistant. 
-        Your primary job is to evaluate the quality of the conversation based on a criterion. To do so, read the conversation and references, 
-        and answer the followed question, by selecting only one of the choices.
+You are given a conversation between a user and an intelligent assistant for an enterprise chat scenario. In some cases, some references and citations are provided to back up the claims made by the intelligent assistant. Your primary job is to evaluate the quality of the conversation based on a criterion. To do so, read the conversation and references, and answer the followed question, by selecting only one of the choices.
 
-        Conversation: {conversation}
+Conversation: {conversation}
 
-        Question: **{question}**
+Question: **{question}**
 
-        Options:
-        {formatted_options}
+Options:
+{formatted_options}
 
-        Only print '1', '2', '3', or '4'.
-        """
+Only print '1', '2', '3', or '4'.
+"""
 
     def _load_rubric(self, path: str) -> Dict:
         try:

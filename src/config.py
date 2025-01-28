@@ -10,8 +10,8 @@ from typing import Optional
 
 @dataclass
 class Config:
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-    model: str = "gpt-4-0125-preview"
+    openai_api_key: str = "your-key-here"
+    model: str = "gpt-3.5-turbo-16k"
     temperature: float = 0.0
     cache_dir: str = "cache"
     batch_size: int = 5

@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--rubric', type=str, required=True, help='Path to rubric JSON file')
     parser.add_argument('--conversation', type=str, required=True, help='Path to conversation file')
     parser.add_argument('--output', type=str, default='/export/fs06/psingh54/LLMRubric/outputs', help='Output directory')
-    parser.add_argument('--model', type=str, default="gpt-4-0125-preview", help='OpenAI model to use')
+    parser.add_argument('--model', type=str, default="gpt-3.5-turbo-16k", help='OpenAI model to use')
     parser.add_argument('--temperature', type=float, default=0.0, help='Temperature for sampling')
     args = parser.parse_args()
 
@@ -59,10 +59,18 @@ def main():
         # Initialize components
         evaluator = LLMEvaluator(args.rubric)
         llm_caller = OpenAILLMCaller(config)
+
+        with open(args.conversation, 'r') as file:
+            conversation_data = json.load(file)
+
+        conversation = conversation_data.get("conv_1", [])
+        formatted_conversation = []
         
-        # Load conversation
-        with open(args.conversation, 'r') as f:
-            conversation = f.read()
+        for user_message, assistant_message in conversation:
+            formatted_conversation.append(f"User: {user_message}")
+            formatted_conversation.append(f"Assistant: {assistant_message}")
+        
+        conversation = "\n".join(formatted_conversation)
         
         # Run evaluation
         logger.info("Starting evaluation...")
