@@ -10,6 +10,7 @@ and retry policies.
 """
 
 import os
+from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Optional
 
@@ -28,7 +29,8 @@ class Config:
         retry_delay (int): Time in seconds between retries.
     """
 
-    openai_api_key: str = "your-key-here"
+    load_dotenv()
+    openai_api_key: str = os.getenv("OPENAI_API_KEY")
     model: str = "gpt-3.5-turbo-16k"
     temperature: float = 0.8
     cache_dir: str = "cache"
