@@ -1,0 +1,107 @@
+rubric:
+  Q1:
+    question_id: "Q1"
+    category: "Naturalness"
+    prompt: "In terms of naturalness and tone of the assistant utterances, to what degree are they likely to be produced by an intelligent human in a conversation? Disregard whether they are grounded in the search results."
+    options:
+      1: "Unlikely"
+      2: "Somewhat Unlikely"
+      3: "Somewhat Likely"
+      4: "Likely"
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q2:
+    question_id: "Q2"
+    category: "Citation Quality"
+    prompt: "If the references are provided, to what degree user's questions can be answered or resolved using the references? The assistant’s responses should not impact your response to this question. If no references are provided in the conversation, please write 'NA' for this question."
+    options:
+      1: "None of the questions that user has asked could be answered using the reference documents."
+      2: "Less than half of documents that user has asked could be answered using the reference document."
+      3: "Half or more than half of the questions that user has asked could be answered using the reference documents."
+      4: "All the questions the user has asked could be answered with the reference documents."
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q3:
+    question_id: "Q3"
+    category: "Citation Usage"
+    prompt: "Independent of what sources are cited in the conversation, to what degree the claims made by the assistant are followed by a citation. If no references are provided in the conversation, please write 'NA'."
+    options:
+      1: "None of the claims are followed by a citation."
+      2: "Less than half of the claims are followed by a citation."
+      3: "Half, or more than half of the claims are followed by a citation."
+      4: "All claims are followed by a citation."
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q4:
+    question_id: "Q4"
+    category: "Citation Accuracy"
+    prompt: "What percentage of citations accurately support the claims made in the conversation? If no references are provided in the conversation, please write 'NA'."
+    options:
+      1: "None of the citations accurately support the provided claims."
+      2: "Less than half of citations accurately support the provided claims."
+      3: "Half, or more than half of citations accurately support the provided claims."
+      4: "All citations accurately support the provided claims."
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q5:
+    question_id: "Q5"
+    category: "Source Selection"
+    prompt: "To what degree the cited sources are the best candidates among all the provided sources? If no references are provided in the conversation, please write 'NA'."
+    options:
+      1: "For all citations, there is a better source to be cited."
+      2: "For more than half of the citations, there is a better source to be cited."
+      3: "For half or less than half of the citations, there is a better source to be cited."
+      4: "The best sources are cited in all cases."
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q6:
+    question_id: "Q6"
+    category: "Redundancy"
+    prompt: "To what degree the content of the assistant utterances is free of redundant elements, such as repetition, overspecification, etc."
+    options:
+      1: "The conversation has a large number of redundant elements."
+      2: "The conversation has some redundant elements."
+      3: "The conversation has a few redundant elements."
+      4: "The conversation is completely free of redundant elements."
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q7:
+    question_id: "Q7"
+    category: "Conciseness"
+    prompt: "To what degree the assistant responses are concise?"
+    options:
+      1: "In all assistant utterances, the responses could have been shorter."
+      2: "In more than half of the assistant utterances, the responses could have been shorter."
+      3: "In half, or less than half of the assistant utterances, the responses could have been shorter."
+      4: "In all assistant utterances, the responses are concise and the utterance length is appropriate."
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q8:
+    question_id: "Q8"
+    category: "Dialogue Efficiency"
+    prompt: "Do you think the number of exchange turns or back and forth is appropriate given the complexity of the user information need?"
+    options:
+      1: "No, fewer interactions would be sufficient and would make this conversation more pleasant."
+      2: "No, more interactions are needed for a better conversation experience."
+      3: "Yes, the rate of exchanges between the user and the assistant is reasonable."
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+
+  Q0:
+    question_id: "Q0"
+    category: "Overall Satisfaction"
+    prompt: "Imagine you are the user who had this conversation with the assistant. All in all, how would you rate your overall satisfaction while interacting with the assistant? The higher the rating, the better the experience."
+    options:
+      1: "Very Dissatisfied"
+      2: "Somewhat Dissatisfied"
+      3: "Somewhat Satisfied"
+      4: "Very Satisfied"
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
