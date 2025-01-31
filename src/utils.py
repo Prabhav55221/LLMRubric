@@ -13,6 +13,7 @@ import hashlib
 import pickle
 import os
 from config import Config
+from datetime import datetime, timedelta
 from datetime import datetime
 
 class CacheManager:
@@ -21,7 +22,7 @@ class CacheManager:
 
     Caching is based on:
     - The input prompt.
-    - Model settings (model name, temperature).
+    - Model settings (model name, temperature, max retries).
     - A unique hash of the rubric to track version changes.
 
     Attributes:
@@ -71,22 +72,41 @@ class CacheManager:
         key_string = f"{prompt}-{config_str}-{self.rubric_hash}"
         return hashlib.md5(key_string.encode()).hexdigest()
 
+    def _is_cache_expired(self, cache_file: str) -> bool:
+        """
+        Checks if a cached file has expired based on the configured expiration time.
+
+        Args:
+            cache_file (str): The full path to the cache file.
+
+        Returns:
+            bool: True if the cache file is expired, False otherwise.
+        """
+        expiry_time = timedelta(days=self.config.cache_expiry_days)
+        file_modified_time = datetime.fromtimestamp(os.path.getmtime(cache_file))
+        return datetime.now() - file_modified_time > expiry_time
+
     def get(self, prompt: str) -> Optional[List[float]]:
         """
-        Retrieves a cached result if available.
+        Retrieves a cached result if available and not expired.
 
         Args:
             prompt (str): The input prompt.
 
         Returns:
-            Optional[List[float]]: Cached probabilities if available, else None.
+            Optional[List[float]]: Cached probabilities if available and valid, else None.
         """
         cache_key = self._get_cache_key(prompt)
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
 
         if os.path.exists(cache_file):
+            if self._is_cache_expired(cache_file):
+                os.remove(cache_file)
+                return None
+
             with open(cache_file, "rb") as f:
-                return pickle.load(f)  # Safely load cached results
+                return pickle.load(f)  # Load cached results safely
+        
         return None
 
     def set(self, prompt: str, result: List[float]) -> None:
@@ -102,7 +122,7 @@ class CacheManager:
 
         with open(cache_file, "wb") as f:
             pickle.dump(result, f)  # Store response securely
-
+        
 
 class EvaluationResult:
     """

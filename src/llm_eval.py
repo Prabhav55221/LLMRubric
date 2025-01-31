@@ -45,7 +45,7 @@ def main() -> None:
     Main function to evaluate a conversation using an LLM and a predefined rubric.
     """
     parser = argparse.ArgumentParser(description="LLM-RUBRIC Conversation Evaluation")
-    parser.add_argument("--rubric", type=str, required=True, help="Path to rubric JSON/YAML file")
+    parser.add_argument("--rubric_guide", type=str, required=True, help="Path to system evaluation file (YAML).")
     parser.add_argument("--conversation", type=str, required=True, help="Path to conversation file")
     parser.add_argument("--output", type=str, default="/export/fs06/psingh54/LLMRubric/outputs", help="Output directory")
     parser.add_argument("--model", type=str, default="gpt-3.5-turbo-16k", help="OpenAI model to use")
@@ -70,7 +70,7 @@ def main() -> None:
         )
 
         # Initialize evaluator and LLM caller
-        evaluator = LLMEvaluator(args.rubric)
+        evaluator = LLMEvaluator(args.rubric_guide)
         llm_caller = OpenAILLMCaller(config)
 
         # Load the conversation data

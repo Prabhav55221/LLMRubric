@@ -27,102 +27,113 @@ class OpenAILLMCaller:
         logger (logging.Logger): Logger for tracking API calls and errors.
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, rubric: Dict[str, Dict]):
         """
         Initializes the OpenAI LLM Caller with API credentials and caching.
-        """
 
+        Args:
+            config (Config): Configuration object with model and API settings.
+            rubric (Dict[str, Dict]): The parsed rubric dictionary.
+        """
         self.client = OpenAI(api_key=config.openai_api_key)
         self.config = config
-        self.cache = CacheManager(config.cache_dir)
+        self.cache = CacheManager(config.cache_dir, config, rubric)
+        self.rubric = rubric
 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def _call_api(self, prompt: str) -> List[float]:
+    def _call_api(self, prompt: str, question_id: str) -> List[float]:
         """
-        Calls OpenAI API and retrieves log probabilities for options "1" to "4".
+        Calls OpenAI API and retrieves log probabilities for options.
 
         Args:
             prompt (str): The input prompt to send to OpenAI.
+            question_id (str): The question ID from the rubric.
 
         Returns:
-            List[float]: A list of probabilities corresponding to options 1-4.
+            List[float]: A list of unnormalized probabilities corresponding to options.
 
-        If an error occurs, returns a uniform probability distribution [0.25, 0.25, 0.25, 0.25].
+        If an error occurs, returns a uniform probability distribution.
         """
 
         try:
+            # Get the number of options for the given question from the rubric
+            if question_id not in self.rubric:
+                raise ValueError(f"Question ID {question_id} not found in rubric.")
+
+            question_data = self.rubric[question_id]
+            options = question_data["options"]
+            n_options = len(options)
 
             response = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model=self.config.model,
                 temperature=self.config.temperature,
-                max_tokens=4,
+                max_tokens=n_options,  # Dynamically set based on options count
                 logprobs=True,
-                top_logprobs=4
+                top_logprobs=n_options  # Dynamically set based on options count
             )
 
-            # Extract logprobs for valid tokens
+            # Extract log-probabilities for valid tokens (option indices)
             token_logprobs: Dict[str, float] = {}
             for i in response.choices[0].logprobs.content[0].top_logprobs:
                 token = i.token.strip()
                 logprob = i.logprob
-                if token in {"1", "2", "3", "4"}:
+                if token in options.keys():  # Ensure we only get valid option keys
                     token_logprobs[token] = float(logprob)
 
-            # Convert logprobs to probabilities using softmax
+            # Convert log-probs to unnormalized probabilities
             logprobs_array = np.array([
-                token_logprobs.get(str(i + 1), float('-inf')) for i in range(4)
+                token_logprobs.get(str(i + 1), float('-inf')) for i in range(n_options)
             ])
 
-            # Softmax normalization to get probabilities
-            exp_logprobs = np.exp(logprobs_array - np.max(logprobs_array))
-            probs = exp_logprobs / exp_logprobs.sum()
+            # Exponentiate log-probs (no softmax, unnormalized probabilities)
+            probs = np.exp(logprobs_array)
 
-            # Ensure no zero probabilities (add small smoothing factor)
-            probs = np.maximum(probs, 1e-7)
-            probs = probs / probs.sum()
-
-            self.logger.info(f"Generated probabilities: {probs}")
+            self.logger.info(f"Generated probabilities for {question_id}: {probs}")
             return probs.tolist()
 
         except Exception as e:
-            self.logger.error(f"Error in API call: {e}")
-            # Fallback uniform probability
-            return [0.25, 0.25, 0.25, 0.25]
+            self.logger.error(f"Error in API call for {question_id}: {e}")
+            # Return uniform probability in case of failure
+            return [1.0 / n_options] * n_options
 
-    def __call__(self, prompt: str) -> List[float]:
+    def __call__(self, prompt: str, question_id: str) -> List[float]:
         """
-        Retrieves probabilities for each option (1-4) given a conversation prompt.
+        Retrieves probabilities for each option given a conversation prompt.
+
         Uses caching to avoid redundant API calls.
 
         Args:
-            prompt (str): The input prompt containing a conversation and evaluation question.
+            prompt (str): The input prompt.
+            question_id (str): The question ID from the rubric.
 
         Returns:
-            List[float]: A probability distribution over options 1-4.
+            List[float]: A probability distribution over valid options.
         """
+        cache_key = f"{question_id}-{prompt}"
 
         # Check cache before calling the API
-        cached_result = self.cache.get(prompt)
-
+        cached_result = self.cache.get(cache_key)
         if cached_result is not None:
             return cached_result
 
         try:
-            probabilities = self._call_api(prompt)
+            probabilities = self._call_api(prompt, question_id)
 
             # Store the result in cache
-            self.cache.set(prompt, probabilities)
+            self.cache.set(cache_key, probabilities)
 
             return probabilities
 
         except Exception as e:
-            self.logger.error(f"Error in LLM call: {e}")
-            # Fallback uniform probability
-            return [0.25, 0.25, 0.25, 0.25]
+            self.logger.error(f"Error in LLM call for {question_id}: {e}")
+            # Return uniform probability as fallback
+            n_options = len(self.rubric[question_id]["options"])
+            return [1.0 / n_options] * n_options
+
 
 class LLMEvaluator:
     """
@@ -133,28 +144,36 @@ class LLMEvaluator:
         prompt_template (str): The pre-defined prompt format for evaluation.
     """
 
-    def __init__(self, rubric_path: str):
+    def __init__(self, system_path: str):
         """
         Initializes the evaluator by loading the rubric from a YAML or JSON file.
 
         Args:
-            rubric_path (str): Path to the rubric file (JSON or YAML).
+            system_path (str): Path to the system evaluation file (AML).
         """
+        self.prompt_template = ''
+        rubric_path = self._load_system(system_path)
         self.rubric = self._load_rubric(rubric_path)
-        self.prompt_template = """
-You are given a conversation between a user and an intelligent assistant for an enterprise chat scenario. In some cases, some references and citations are provided to back up the claims made by the intelligent assistant. Your primary job is to evaluate the quality of the conversation based on a criterion. To do so, read the conversation and references, and answer the followed question, by selecting only one of the choices.
 
-Conversation: {conversation}
+    def _load_system(self, path: str) -> str:
+        """
+        Loads the system prompt and get rubric path from a YAML file.
 
-Question: **{question}**
+        Args:
+            path (str): Path to the system file.
 
-Options:
-{formatted_options}
+        Returns:
+            path (str): Rubric file path.
+        """
 
-Only print '1', '2', '3', or '4'.
-"""
+        with open(path, "r") as f:
+            system_data = yaml.safe_load(f)
+            self.prompt_template = system_data["prompt"]
+            rubric_path = system_data["rubric_path"]
 
-    def _load_rubric(self, path: str) -> Dict[str, Dict[str, Union[str, List[str]]]]:
+        return rubric_path
+
+    def _load_rubric(self, path: str) -> Dict[str, Dict]:
         """
         Loads the rubric from a YAML or JSON file.
 
@@ -162,14 +181,10 @@ Only print '1', '2', '3', or '4'.
             path (str): Path to the rubric file.
 
         Returns:
-            Dict[str, Dict[str, Union[str, List[str]]]]: Parsed rubric content.
-
-        Raises:
-            ValueError: If the file format is not supported or if required fields are missing.
+            Dict[str, Dict]: Parsed rubric content.
         """
-
         try:
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 if path.endswith((".yaml", ".yml")):
                     rubric_data = yaml.safe_load(f)
                 elif path.endswith(".json"):
@@ -177,43 +192,23 @@ Only print '1', '2', '3', or '4'.
                 else:
                     raise ValueError("Unsupported file format. Use JSON or YAML.")
 
-            self._validate_rubric(rubric_data["rubric"])
             return rubric_data["rubric"]
 
         except Exception as e:
             logging.error(f"Failed to load rubric: {e}")
             raise
 
-    def _validate_rubric(self, rubric: Dict[str, Dict[str, Union[str, List[str]]]]) -> None:
-        """
-        Validates the structure of the rubric.
-
-        Args:
-            rubric (Dict): The parsed rubric dictionary.
-
-        Raises:
-            ValueError: If required fields are missing.
-        """
-
-        required_keys = [f"Q{i}" for i in range(9)]
-        for key in required_keys:
-            if key not in rubric:
-                raise ValueError(f"Missing required question {key} in rubric")
-            if "PromptDesc" not in rubric[key] or "Options" not in rubric[key]:
-                raise ValueError(f"Missing required fields in {key}")
-
-    def _format_options(self, options: List[Union[str, int]]) -> str:
+    def _format_options(self, options: Dict[int, str]) -> str:
         """
         Formats options into a numbered list.
 
         Args:
-            options (List[Union[str, int]]): The list of answer options.
+            options (Dict[int, str]): The list of answer options.
 
         Returns:
             str: A formatted string with numbered answer choices.
         """
-
-        return "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options))
+        return "\n".join(f"{key}. {value}" for key, value in options.items())
 
     def generate_prompt(self, conversation: str, question_id: str) -> str:
         """
@@ -226,15 +221,14 @@ Only print '1', '2', '3', or '4'.
         Returns:
             str: A fully formatted prompt.
         """
-        
         if question_id not in self.rubric:
             raise ValueError(f"Invalid question ID: {question_id}")
 
         question_data = self.rubric[question_id]
-        formatted_options = self._format_options(question_data["Options"])
+        formatted_options = self._format_options(question_data["options"])
 
         return self.prompt_template.format(
             conversation=conversation,
-            question=question_data["PromptDesc"],
+            question=question_data["prompt"],
             formatted_options=formatted_options
         )

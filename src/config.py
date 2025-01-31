@@ -27,6 +27,7 @@ class Config:
         batch_size (int): Number of requests processed in parallel.
         max_retries (int): Maximum number of retries in case of API failure.
         retry_delay (int): Time in seconds between retries.
+        cache_expiry_days (int): Time in days post which, cache will be removed!
     """
 
     load_dotenv()
@@ -37,3 +38,4 @@ class Config:
     batch_size: int = 5 
     max_retries: int = 3
     retry_delay: int = 1
+    cache_expiry_days: int = 7
