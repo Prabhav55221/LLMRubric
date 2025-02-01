@@ -27,9 +27,9 @@ share/python-wheels/
 MANIFEST
 *.ipynb
 
-./outputs/cache/*
-./outputs/llm_results/*
-./outputs/*.log
+outputs/cache/*
+outputs/llm_results/*
+outputs/*.log
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
