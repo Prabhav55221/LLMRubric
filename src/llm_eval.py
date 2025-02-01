@@ -71,7 +71,7 @@ def main() -> None:
 
         # Initialize evaluator and LLM caller
         evaluator = LLMEvaluator(args.rubric_guide)
-        llm_caller = OpenAILLMCaller(config)
+        llm_caller = OpenAILLMCaller(config, evaluator.rubric, logger)
 
         # Load the conversation data
         with open(args.conversation, "r") as file:

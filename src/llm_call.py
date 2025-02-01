@@ -27,21 +27,20 @@ class OpenAILLMCaller:
         logger (logging.Logger): Logger for tracking API calls and errors.
     """
 
-    def __init__(self, config: Config, rubric: Dict[str, Dict]):
+    def __init__(self, config: Config, rubric: Dict[str, Dict], logger):
         """
         Initializes the OpenAI LLM Caller with API credentials and caching.
 
         Args:
             config (Config): Configuration object with model and API settings.
             rubric (Dict[str, Dict]): The parsed rubric dictionary.
+            logger (logging.Logger): Logger for tracking API calls and errors.
         """
         self.client = OpenAI(api_key=config.openai_api_key)
         self.config = config
         self.cache = CacheManager(config.cache_dir, config, rubric)
         self.rubric = rubric
-
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def _call_api(self, prompt: str, question_id: str) -> List[float]:
@@ -81,7 +80,7 @@ class OpenAILLMCaller:
             for i in response.choices[0].logprobs.content[0].top_logprobs:
                 token = i.token.strip()
                 logprob = i.logprob
-                if token in options.keys():  # Ensure we only get valid option keys
+                if int(token) in options.keys():  # Ensure we only get valid option keys
                     token_logprobs[token] = float(logprob)
 
             # Convert log-probs to unnormalized probabilities
@@ -168,8 +167,8 @@ class LLMEvaluator:
 
         with open(path, "r") as f:
             system_data = yaml.safe_load(f)
-            self.prompt_template = system_data["prompt"]
-            rubric_path = system_data["rubric_path"]
+            self.prompt_template = system_data["system_prompt"]["prompt"]
+            rubric_path = system_data["system_prompt"]["rubric_path"]
 
         return rubric_path
 
@@ -221,7 +220,7 @@ class LLMEvaluator:
         Returns:
             str: A fully formatted prompt.
         """
-        if question_id not in self.rubric:
+        if question_id not in self.rubric.keys():
             raise ValueError(f"Invalid question ID: {question_id}")
 
         question_data = self.rubric[question_id]
@@ -232,3 +231,22 @@ class LLMEvaluator:
             question=question_data["prompt"],
             formatted_options=formatted_options
         )
+    
+    def evaluate_conversation(self, conversation: str, llm_caller) -> EvaluationResult:
+        """
+        Create object of type EvaluationResult.
+        For each question in Rubric, evaluate using prompt and get probability distribution!
+
+        Args:
+            conversation (str): Conversation Text
+            llm_caller (_type_): OpenAI LLM Caller API Class
+
+        Returns:
+            EvaluationResult: Object with results stored within.
+        """
+        result = EvaluationResult()
+        for q_id in self.rubric.keys():
+            prompt = self.generate_prompt(conversation, q_id)
+            probs = llm_caller(prompt, q_id)
+            result.add_result(q_id, probs)
+        return result
