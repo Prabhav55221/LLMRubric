@@ -249,4 +249,6 @@ class LLMEvaluator:
             prompt = self.generate_prompt(conversation, q_id)
             probs = llm_caller(prompt, q_id)
             result.add_result(q_id, probs)
+
+        result.all_results.append(result)
         return result

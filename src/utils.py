@@ -135,6 +135,7 @@ class EvaluationResult:
 
     def __init__(self):
         """Initializes an empty evaluation result container."""
+        self.all_results: List[Dict[str, List[float]]] = [{}]
         self.results: Dict[str, List[float]] = {}
         self.timestamps: Dict[str, datetime] = {}
 
@@ -170,4 +171,4 @@ class EvaluationResult:
             filepath (str): The file path to save the results.
         """
         with open(filepath, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
+            json.dump(self.all_results, f, indent=2)

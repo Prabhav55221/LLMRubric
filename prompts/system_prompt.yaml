@@ -1,4 +1,4 @@
 system_prompt:
-  name: "Conversation Quality"
+  name: "Story Evaluation"
   rubric_path: "/export/fs06/psingh54/LLMRubric/prompts/rubric.yaml"
-  prompt: "You are given a conversation between a user and an intelligent assistant for an enterprise chat scenario. In some cases, some references and citations are provided to back up the claims made by the intelligent assistant. Your primary job is to evaluate the quality of the conversation based on a criterion. To do so, read the conversation and references, and answer the followed question, by selecting only one of the choices.\n\n\nConversation: {conversation}\n\nQuestion: **{question}**\n\nOptions:\n{formatted_options}\n\nOnly print the number corresponding to your answer choice."
+  prompt: "You are given a story created written by an author based on a prompt. Your primary job is to evaluate the story based on a criteria. To do so, read the prompt and the story, and then answer the followed question, by selecting one of the choices.\n\n\nPrompt and Story: {TEXT}\n\nQuestion: **{QUESTION}**\n\nOptions:\n{OPTIONS}\n\nOnly print the number corresponding to your answer choice."

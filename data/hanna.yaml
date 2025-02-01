@@ -1,0 +1,24 @@
+NAME: HANNA Benchmark
+CSV_PATH: /export/fs06/psingh54/LLMRubric/data/hanna_stories_annotations_updated.csv
+SYSTEM_PATH: /export/fs06/psingh54/LLMRubric/prompts/system_prompt.yaml
+DIMENSIONS:
+  Q1: Relevance
+  Q2: Coherence
+  Q3: Empathy
+  Q4: Surprise
+  Q5: Engagement
+  Q6: Complexity
+  Q0: Overall Satisfaction
+JUDGE_IDS:
+  J1: A2VE5IV9OD2SK1
+  J2: A1IZ4NX41GKU4X
+  J3: A264NN7JBX4UDQ
+  J4: A3CFNUD7VR2E1E
+  J5: A03922113RU44GENR8ATX
+  J6: A2WNW8A4MOR7T7
+  J7: A1V6CP5I0TOSAR
+  J8: AHV4U78TUUDKI
+  J9: AE861G0AY5RGT
+  J10: A37WDOIQH6JM6V
+  J11: A23LXQ5ZX2YONR
+  J12: A1SWRO4LMKPCOQ
