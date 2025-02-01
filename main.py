@@ -23,10 +23,10 @@ from datetime import datetime
 from typing import List, Dict, Union
 
 # Internal Imports
-os.chdir('/export/fs06/psingh54/LLMRubric/src')
-from config import Config
-from utils import CacheManager, EvaluationResult
-from llm_call import OpenAILLMCaller, LLMEvaluator
+# os.chdir('/export/fs06/psingh54/LLMRubric/src')
+from src.config import Config
+from src.utils import CacheManager, EvaluationResult
+from src.llm_call import OpenAILLMCaller, LLMEvaluator
 
 def setup_logging(output_dir: str) -> None:
     """
@@ -87,7 +87,7 @@ def main():
         rubric_guide = dataset_main['SYSTEM_PATH']
         dataset_csv = dataset_main['CSV_PATH']
         judges = dataset_main['JUDGE_IDS']
-        dimenstions = dataset_main['DIMENSIONS']
+        dimensions = dataset_main['DIMENSIONS']
 
         logger.info(f"Starting LLM Evaluation for {experiment_name} with {len(judges.keys())}.")
 
@@ -104,14 +104,16 @@ def main():
         text_units = list(df['TEXT'].values)
         logger.info(f"Evaluation for {len(text_units)} text units.")
 
+        all_results = []
         for i in tqdm(text_units):
             unit = '\n' + i
             # Run evaluation
             result = evaluator.evaluate_conversation(unit, llm_caller)
+            all_results.append(result.results)
 
         # Save results
-        output_file = output_dir / f"RESULTS_{experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        result.save(output_file)
+        output_file = output_dir / f"llm_results/RESULTS_{experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        result.save(output_file, all_results)
         logger.info(f"Results saved to {output_file}")
 
     except Exception as e:

@@ -12,8 +12,8 @@ import yaml
 import logging
 from typing import List, Optional, Dict, Union
 import numpy as np
-from config import Config
-from utils import CacheManager, EvaluationResult
+from src.config import Config
+from src.utils import CacheManager, EvaluationResult
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 class OpenAILLMCaller:
@@ -117,6 +117,7 @@ class OpenAILLMCaller:
         # Check cache before calling the API
         cached_result = self.cache.get(cache_key)
         if cached_result is not None:
+            self.logger.info("Found Existing Cache. Using it. Please Abort if not intended behaviour!")
             return cached_result
 
         try:
@@ -209,12 +210,12 @@ class LLMEvaluator:
         """
         return "\n".join(f"{key}. {value}" for key, value in options.items())
 
-    def generate_prompt(self, conversation: str, question_id: str) -> str:
+    def generate_prompt(self, text_unit: str, question_id: str) -> str:
         """
         Generates a formatted prompt using the conversation and rubric question.
 
         Args:
-            conversation (str): The conversation text.
+            text_unit (str): The conversation text.
             question_id (str): The question ID from the rubric.
 
         Returns:
@@ -227,18 +228,18 @@ class LLMEvaluator:
         formatted_options = self._format_options(question_data["options"])
 
         return self.prompt_template.format(
-            conversation=conversation,
-            question=question_data["prompt"],
-            formatted_options=formatted_options
+            TEXT=text_unit,
+            QUESTION=question_data["prompt"],
+            OPTIONS=formatted_options
         )
     
-    def evaluate_conversation(self, conversation: str, llm_caller) -> EvaluationResult:
+    def evaluate_conversation(self, text_unit: str, llm_caller) -> EvaluationResult:
         """
         Create object of type EvaluationResult.
         For each question in Rubric, evaluate using prompt and get probability distribution!
 
         Args:
-            conversation (str): Conversation Text
+            text_unit (str): Conversation Text
             llm_caller (_type_): OpenAI LLM Caller API Class
 
         Returns:
@@ -246,9 +247,8 @@ class LLMEvaluator:
         """
         result = EvaluationResult()
         for q_id in self.rubric.keys():
-            prompt = self.generate_prompt(conversation, q_id)
+            prompt = self.generate_prompt(text_unit, q_id)
             probs = llm_caller(prompt, q_id)
             result.add_result(q_id, probs)
 
-        result.all_results.append(result)
         return result

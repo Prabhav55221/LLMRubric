@@ -12,7 +12,7 @@ import json
 import hashlib
 import pickle
 import os
-from config import Config
+from src.config import Config
 from datetime import datetime, timedelta
 from datetime import datetime
 
@@ -135,7 +135,6 @@ class EvaluationResult:
 
     def __init__(self):
         """Initializes an empty evaluation result container."""
-        self.all_results: List[Dict[str, List[float]]] = [{}]
         self.results: Dict[str, List[float]] = {}
         self.timestamps: Dict[str, datetime] = {}
 
@@ -163,7 +162,7 @@ class EvaluationResult:
             "timestamps": {k: v.isoformat() for k, v in self.timestamps.items()}
         }
 
-    def save(self, filepath: str) -> None:
+    def save(self, filepath: str, data: List[Dict[str, List[float]]]) -> None:
         """
         Saves results to a JSON file.
 
@@ -171,4 +170,4 @@ class EvaluationResult:
             filepath (str): The file path to save the results.
         """
         with open(filepath, "w") as f:
-            json.dump(self.all_results, f, indent=2)
+            json.dump(data, f, indent=2)
