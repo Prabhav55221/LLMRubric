@@ -172,14 +172,6 @@ def calibrate(csv_path, json_path, logger):
 
     # Create dataset
     dataset = RubricDataset(llm_outputs, human_scores, judge_ids)
-    
-    # Split dataset into training and validation
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
-
-    train_loader = DataLoader(train_dataset, batch_size=Config.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=Config.batch_size, shuffle=False)
 
     # Define hyperparameter grid for Grid Search CV
     input_dim = Config.num_questions * Config.num_options
@@ -202,6 +194,14 @@ def calibrate(csv_path, json_path, logger):
     ).to(Config.device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=best_params["lr"])
+
+    # Split dataset into training and validation
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+
+    train_loader = DataLoader(train_dataset, batch_size=best_params["batch_size"], shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=best_params["batch_size"], shuffle=False)
 
     # **Pre-training Phase**
     logger.info('\n\n---PRETRAINING STEP---')

@@ -53,7 +53,7 @@ def main():
     
     # TODO: Add options to calibrate once implemented.
     parser = argparse.ArgumentParser(description="LLM-RUBRIC Conversation Evaluation")
-    parser.add_argument("--dataset", type=str, required=True, help="Path to Dataset YAML. Ensure it follows structure shown in ReadME!")
+    parser.add_argument("--dataset", type=str, required=True, help="Path to Dataset YAML. Ensure it follows structure shown in ReadMe!")
     parser.add_argument("--output", type=str, default="/export/fs06/psingh54/LLMRubric/outputs", help="Output directory for logs and intermediate outputs.")
     parser.add_argument("--model", type=str, default="gpt-3.5-turbo-16k", help="OpenAI model to use")
     parser.add_argument("--temperature", type=float, default=0.8, help="Temperature for sampling")
