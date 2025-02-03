@@ -10,6 +10,7 @@ and retry policies.
 """
 
 import os
+import torch
 from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Optional
@@ -30,6 +31,7 @@ class Config:
         cache_expiry_days (int): Time in days post which, cache will be removed!
     """
 
+    # LLM Logits Config
     load_dotenv()
     openai_api_key: str = os.getenv("OPENAI_API_KEY")
     model: str = "gpt-3.5-turbo-16k"
@@ -39,3 +41,22 @@ class Config:
     max_retries: int = 3
     retry_delay: int = 1
     cache_expiry_days: int = 7
+
+    # Calibration Configs
+    num_questions: int = 7
+    num_judges: int = 12
+    num_options: int = 5
+
+    # Network Training Configs
+    num_folds: int = 5
+    seed: int = 42
+    batch_size: int = 32
+    param_grid: dict = {
+        "h1": [10, 25, 50, 100],
+        "h2": [10, 25, 50, 100],
+        "batch_size": [32, 64, 128, 256],
+        "lr": [0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01],
+        "num_epochs": [5, 10, 20, 30, 40, 50]
+    }
+    model_save_dir: str = "/export/fs06/psingh54/LLMRubric/models/calibration_model.pth"
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"

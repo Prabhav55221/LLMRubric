@@ -27,6 +27,7 @@ from typing import List, Dict, Union
 from src.config import Config
 from src.utils import CacheManager, EvaluationResult
 from src.llm_call import OpenAILLMCaller, LLMEvaluator
+from src.calibrate import calibrate
 
 def setup_logging(output_dir: str) -> None:
     """
@@ -89,7 +90,8 @@ def main():
         judges = dataset_main['JUDGE_IDS']
         dimensions = dataset_main['DIMENSIONS']
 
-        logger.info(f"Starting LLM Evaluation for {experiment_name} with {len(judges.keys())}.")
+        logger.info(f"=== EXPERIMENT NAME: {experiment_name} ===")
+        logger.info(f"Stage 0: Starting LLM Evaluation for {experiment_name} with {len(judges.keys())}.")
 
         # Initialize evaluator and LLM caller
         evaluator = LLMEvaluator(rubric_guide)
@@ -102,7 +104,7 @@ def main():
             sys.exit()
 
         text_units = list(df['TEXT'].values)
-        logger.info(f"Evaluation for {len(text_units)} text units.")
+        logger.info(f"Evaluation will be for {len(text_units)} text units.")
 
         all_results = []
         for i in tqdm(text_units):
@@ -114,10 +116,21 @@ def main():
         # Save results
         output_file = output_dir / f"llm_results/RESULTS_{experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         result.save(output_file, all_results)
-        logger.info(f"Results saved to {output_file}")
+        logger.info(f"LLM Probabilites saved to {output_file}")
+
+        logger.info(f"========")
+        logger.info(f"\nStage 1: Starting calibration with network!")
+
+        metrics = calibrate(dataset_csv, str(output_file), logger)
+        save_path = output_dir / f"calibration_results/METRICS_{experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        # Save Evaluation
+        with open(filepath, "w") as f:
+            json.dump(metrics, f, indent=2)
+
+        logger.info(f"=== END OF EXPERIMENT ===")
 
     except Exception as e:
-        logger.error(f"Error during evaluation: {e}", exc_info=True)
+        logger.error(f"Error during llm evaluation: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":

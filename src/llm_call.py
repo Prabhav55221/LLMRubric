@@ -91,7 +91,7 @@ class OpenAILLMCaller:
             # Exponentiate log-probs (no softmax, unnormalized probabilities)
             probs = np.exp(logprobs_array)
 
-            self.logger.info(f"Generated probabilities for {question_id}: {probs}")
+            self.logger.warning(f"Generated probabilities for {question_id}: {probs}")
             return probs.tolist()
 
         except Exception as e:
@@ -117,7 +117,7 @@ class OpenAILLMCaller:
         # Check cache before calling the API
         cached_result = self.cache.get(cache_key)
         if cached_result is not None:
-            self.logger.info("Found Existing Cache. Using it. Please Abort if not intended behaviour!")
+            self.logger.warning("Found Existing Cache. Using it. Please Abort if not intended behaviour!")
             return cached_result
 
         try:

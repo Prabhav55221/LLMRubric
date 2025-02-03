@@ -22,13 +22,15 @@ class RubricDataset(Dataset):
 
     def __init__(self, llm_probs, human_scores, judge_ids):
 
+        # Flatten Probabilities over all Questions
         self.llm_probs = torch.tensor([
             [p for q in sample.values() for p in q] 
             for sample in llm_probs
         ], dtype=torch.float32)
         
-        self.human_scores = torch.tensor(human_scores, dtype=torch.long)
-        self.judge_ids = torch.tensor(judge_ids, dtype=torch.long)
+        # Zero index judge ids
+        self.human_scores = torch.tensor(human_scores - 1, dtype=torch.long)
+        self.judge_ids = torch.tensor(judge_ids - 1, dtype=torch.long)
         
     def __len__(self):
         """

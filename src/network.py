@@ -23,10 +23,10 @@ class CalibrationNetwork(nn.Module):
         h1 (int): First hidden layer size
         h2 (int): Second hidden layer size
     """
-    def __init__(self, num_judges=12, input_dim=35, h1=50, h2=50):
+    def __init__(self, num_judges=12, num_question = 7, input_dim=35, h1=50, h2=50):
         super().__init__()
         self.num_judges = num_judges
-        self.num_questions = 7
+        self.num_questions = num_question
         
         # Shared weights
         self.W1 = nn.Linear(input_dim + 1, h1)  # Input + bias
@@ -37,9 +37,9 @@ class CalibrationNetwork(nn.Module):
         self.W2_a = nn.ModuleList([nn.Linear(h1 + 1, h2) for _ in range(num_judges)])
         
         # Question-specific output heads
-        self.V = nn.ModuleList([nn.Linear(h2 + 1, 5) for _ in range(self.num_questions)])
+        self.V = nn.ModuleList([nn.Linear(h2 + 1, self.num_questions - 2) for _ in range(self.num_questions)])
         self.V_a = nn.ModuleList([
-            nn.ModuleList([nn.Linear(h2 + 1, 5) for _ in range(self.num_questions)])
+            nn.ModuleList([nn.Linear(h2 + 1, self.num_questions - 2) for _ in range(self.num_questions)])
             for _ in range(num_judges)
         ])
 

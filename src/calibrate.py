@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 from itertools import product
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split, KFold
@@ -39,16 +40,17 @@ def train_model(model, dataloader, epochs, optimizer, phase='pre-train'):
     for epoch in range(epochs):
         total_loss = 0
         for x_batch, y_batch, j_batch in dataloader:
+            
             outputs = model(x_batch, j_batch)
             loss = 0
-            
+
             if phase == 'pre-train':
                 # Multi-task loss for all questions
-                for q in range(7):
+                for q in range(model.num_questions):
                     loss += criterion(outputs[q], y_batch[:, q])
             else:
                 # Focus on main task (Q0)
-                loss = criterion(outputs[6], y_batch[:, 6])
+                loss = criterion(outputs[model.num_questions - 1], y_batch[:, model.num_questions - 1])
                 
             optimizer.zero_grad()
             loss.backward()
@@ -72,10 +74,10 @@ def evaluate_model(model, dataloader):
         for x_batch, y_batch, j_batch in dataloader:
             outputs = model(x_batch, j_batch)
             # Get expected value for Q0
-            pred_probs = outputs[6].cpu().numpy()
-            pred_scores = np.sum(pred_probs * np.arange(1,6), axis=1)
+            pred_probs = outputs[model.num_questions - 1].cpu().numpy()
+            pred_scores = np.sum(pred_probs * np.arange(1,model.num_questions - 1), axis=1)
             predictions.extend(pred_scores)
-            true_scores.extend(y_batch[:,6].cpu().numpy())
+            true_scores.extend(y_batch[:,model.num_questions - 1].cpu().numpy())
     
     # Calculate metrics
     rmse = np.sqrt(np.mean((np.array(predictions) - np.array(true_scores))**2))
@@ -90,13 +92,14 @@ def evaluate_model(model, dataloader):
         'kendall': kendall
     }
 
-def grid_search_cv(dataset, param_grid):
+def grid_search_cv(dataset, param_grid, input_dim):
     """
     Perform Grid Search with 5-fold Cross-Validation to find the best hyperparameters.
     
     Args:
         dataset (Dataset): The dataset used for training.
         param_grid (dict): Dictionary of hyperparameters to search over.
+        input_dim (int): Input dimension of probabilities
 
     Returns:
         dict: Best hyperparameters found.
@@ -106,7 +109,7 @@ def grid_search_cv(dataset, param_grid):
     best_loss = float("inf")
     kfold = KFold(n_splits=5, shuffle=True, random_state=Config.seed)
 
-    for h1, h2, batch_size, lr, num_epochs in product(*param_grid.values()):
+    for h1, h2, batch_size, lr, num_epochs in tqdm(product(*param_grid.values())):
         losses = []
         for train_idx, val_idx in kfold.split(dataset):
             train_subset = torch.utils.data.Subset(dataset, train_idx)
@@ -115,8 +118,8 @@ def grid_search_cv(dataset, param_grid):
             train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
             val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
 
-            model = CalibrationNetwork(num_judges=12, input_dim=35, h1=h1, h2=h2).to(Config.device)
-            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            model = CalibrationNetwork(num_judges=Config.num_judges, input_dim=input_dim, h1=h1, h2=h2).to(Config.device)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
             criterion = nn.CrossEntropyLoss()
 
             # Training Loop
@@ -124,7 +127,7 @@ def grid_search_cv(dataset, param_grid):
                 model.train()
                 for x_batch, y_batch, j_batch in train_loader:
                     outputs = model(x_batch, j_batch)
-                    loss = sum(criterion(outputs[q], y_batch[:, q]) for q in range(7))  # Multi-task loss
+                    loss = sum(criterion(outputs[q], y_batch[:, q]) for q in range(Config.num_questions))  # Multi-task loss
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
@@ -135,7 +138,7 @@ def grid_search_cv(dataset, param_grid):
             with torch.no_grad():
                 for x_batch, y_batch, j_batch in val_loader:
                     outputs = model(x_batch, j_batch)
-                    loss = sum(criterion(outputs[q], y_batch[:, q]) for q in range(7))
+                    loss = sum(criterion(outputs[q], y_batch[:, q]) for q in range(Config.num_questions))
                     val_losses.append(loss.item())
 
             avg_loss = np.mean(val_losses)
@@ -148,15 +151,14 @@ def grid_search_cv(dataset, param_grid):
 
     return best_params
 
-def main(csv_path, json_path, num_epochs_pretrain=20, num_epochs_finetune=10):
+def calibrate(csv_path, json_path, logger):
     """
-    Main function for training and evaluating the calibration network.
+    Calibrate function for training and evaluating the calibration network.
 
     Args:
         csv_path (str): Path to CSV containing human scores and judge IDs.
         json_path (str): Path to JSON file with LLM probability outputs.
-        num_epochs_pretrain (int): Number of epochs for pre-training.
-        num_epochs_finetune (int): Number of epochs for fine-tuning.
+        logger (logging.Logger): Logger for tracking API calls and errors.
     """
 
     # Load Data
@@ -176,50 +178,45 @@ def main(csv_path, json_path, num_epochs_pretrain=20, num_epochs_finetune=10):
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=Config.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=Config.batch_size, shuffle=False)
 
     # Define hyperparameter grid for Grid Search CV
-    param_grid = {
-        "h1": [10, 25, 50, 100],
-        "h2": [10, 25, 50, 100],
-        "batch_size": [32, 64, 128, 256],
-        "lr": [0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01],
-        "num_epochs": [5, 10, 20, 30, 40, 50]
-    }
+    input_dim = Config.num_questions * Config.num_options
+    param_grid = Config.param_grid
+
+    logger.info('Searching for best parameters with Grid CV!')
 
     # Perform Grid Search Cross-Validation
-    best_params = grid_search_cv(dataset, param_grid)
+    best_params = grid_search_cv(dataset, param_grid, input_dim)
+
+    logger.info(f"Best Parameters found: {best_params}")
 
     # Initialize final model with best parameters
     model = CalibrationNetwork(
         num_judges=len(set(judge_ids)), 
-        input_dim=35, 
+        input_dim=input_dim, 
         h1=best_params["h1"], 
-        h2=best_params["h2"]
+        h2=best_params["h2"],
+        num_question=Config.num_questions
     ).to(Config.device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=best_params["lr"])
+    optimizer = torch.optim.AdamW(model.parameters(), lr=best_params["lr"])
 
     # **Pre-training Phase**
+    logger.info('\n\n---PRETRAINING STEP---')
     train_model(model, train_loader, best_params["num_epochs"], optimizer, phase="pre-train")
 
     # **Fine-tuning Phase**
+    logger.info('\n\n---FINETUNING STEP---')
     train_model(model, train_loader, best_params["num_epochs"], optimizer, phase="fine-tune")
 
     # Evaluate the model
     metrics = evaluate_model(model, val_loader)
-    print("Evaluation Metrics:", metrics)
+    print("\nEvaluation Metrics:", metrics)
 
     # Save the model
-    torch.save(model.state_dict(), "calibration_model.pth")
+    torch.save(model.state_dict(), Config.model_save_dir)
     print("Model saved successfully!")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--csv_path", type=str, required=True, help="Path to the CSV file with human scores.")
-    parser.add_argument("--json_path", type=str, required=True, help="Path to the JSON file with LLM-generated probabilities.")
-
-    args = parser.parse_args()
-    
-    main(args.csv_path, args.json_path)
+    return metrics
