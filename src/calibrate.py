@@ -7,6 +7,7 @@ LLM rubric scores with human evaluations.
 """
 
 import json
+import yaml
 import argparse
 import pandas as pd
 import numpy as np
@@ -151,31 +152,54 @@ def grid_search_cv(dataset, param_grid, input_dim):
 
     return best_params
 
-def calibrate(csv_path, json_path, logger):
+def calibrate(csv_path, json_path, dataset_yaml, logger):
     """
     Calibrate function for training and evaluating the calibration network.
 
     Args:
         csv_path (str): Path to CSV containing human scores and judge IDs.
+        dataset_yaml (str): Path to dataset YAML.
         json_path (str): Path to JSON file with LLM probability outputs.
         logger (logging.Logger): Logger for tracking API calls and errors.
     """
+
+    use_cuda = "cuda" if torch.cuda.is_available() else "cpu"
+    if use_cuda:
+        logger.info('USING GPU Acceleration!')
 
     # Load Data
     df = pd.read_csv(csv_path)
     with open(json_path, "r") as f:
         llm_outputs = json.load(f)
 
+    with open(dataset_yaml, "r") as f:
+        dataset_main = yaml.safe_load(f)
+
+    judge_map = {v: k for k, v in dataset_main['JUDGE_IDS'].items()}
+
     # Extract judge IDs and human scores
     judge_ids = df["Judge_IDS"].values
     human_scores = df.iloc[:, :-2].values
+
+    # Convert Judge Ids to Integers
+    for i in range(len(judge_ids)):
+        judge_ids[i] = judge_map[judge_ids[i]]
+
+    judge_ids = judge_ids.astype(int)
+    human_scores = human_scores.astype(float)
 
     # Create dataset
     dataset = RubricDataset(llm_outputs, human_scores, judge_ids)
 
     # Define hyperparameter grid for Grid Search CV
     input_dim = Config.num_questions * Config.num_options
-    param_grid = Config.param_grid
+    param_grid = {
+        "h1": [50, 100],
+        "h2": [64, 128],
+        "batch_size": [16],
+        "lr": [0.0001, 0.001],
+        "num_epochs": [30]
+    }
 
     logger.info('Searching for best parameters with Grid CV!')
 

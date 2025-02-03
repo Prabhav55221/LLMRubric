@@ -56,22 +56,13 @@ class Config:
 
     # Calibration Configs
     num_questions: int = 7
-    num_judges: int = 12
+    num_judges: int = 15
     num_options: int = 5
 
     # Network Training Configs
     num_folds: int = 5
     seed: int = 42
     batch_size: int = 32  # Training batch size
-
-    # Hyperparameter Grid
-    param_grid: Dict[str, list] = field(default_factory=lambda: {
-        "h1": [10, 25, 50, 100],
-        "h2": [10, 25, 50, 100],
-        "batch_size": [32, 64, 128, 256],
-        "lr": [0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01],
-        "num_epochs": [5, 10, 20, 30, 40, 50]
-    })
 
     model_save_dir: str = "/export/fs06/psingh54/LLMRubric/models/calibration_model.pth"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"

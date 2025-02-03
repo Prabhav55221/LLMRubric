@@ -120,7 +120,7 @@ def main():
         logger.info(f"========")
         logger.info(f"\nStage 1: Starting calibration with network!")
 
-        metrics = calibrate(dataset_csv, str(output_file), logger)
+        metrics = calibrate(dataset_csv, str(output_file), dataset_yaml, logger)
         save_path = output_dir / f"calibration_results/METRICS_{experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         # Save Evaluation
         with open(save_path, "w") as f:
