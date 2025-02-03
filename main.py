@@ -23,7 +23,6 @@ from datetime import datetime
 from typing import List, Dict, Union
 
 # Internal Imports
-# os.chdir('/export/fs06/psingh54/LLMRubric/src')
 from src.config import Config
 from src.utils import CacheManager, EvaluationResult
 from src.llm_call import OpenAILLMCaller, LLMEvaluator
@@ -124,7 +123,7 @@ def main():
         metrics = calibrate(dataset_csv, str(output_file), logger)
         save_path = output_dir / f"calibration_results/METRICS_{experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         # Save Evaluation
-        with open(filepath, "w") as f:
+        with open(save_path, "w") as f:
             json.dump(metrics, f, indent=2)
 
         logger.info(f"=== END OF EXPERIMENT ===")
