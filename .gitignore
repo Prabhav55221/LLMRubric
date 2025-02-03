@@ -32,6 +32,9 @@ outputs/llm_results/*
 outputs/*.log
 *.out
 
+outputs/calibration_results
+models/
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
