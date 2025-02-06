@@ -5,7 +5,7 @@
 
 ## Introduction
 
-The base implementation is based on a[^1]. The original LLMRubric paper presents a framework for the automated evaluation of natural language texts. A manually constructed rubric describes how to assess multiple dimensions of interest. To evaluate a text, a large language model (LLM) is prompted with each rubric question and produces a distribution over potential responses. Responses are calibrated by training a small feed-forward neural network that includes both judge-specific and judge-independent parameters.
+The base implementation is based on LLMRubric[^1]. The original LLMRubric paper presents a framework for the automated evaluation of natural language texts. A manually constructed rubric describes how to assess multiple dimensions of interest. To evaluate a text, a large language model (LLM) is prompted with each rubric question and produces a distribution over potential responses. Responses are calibrated by training a small feed-forward neural network that includes both judge-specific and judge-independent parameters.
 
 This repository attempts an extension to the work by introducing the suggestions for future works in the paper:
 - Generalizing the LLMRubric method in a package that can be extended to any form of calibrated LLM-based evaluation.
