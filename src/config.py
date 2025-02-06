@@ -44,6 +44,9 @@ class Config:
     # Load API Key from Environment Variables
     load_dotenv()
     openai_api_key: str = os.getenv("OPENAI_API_KEY")
+
+    # Add maps to different questions!
+    # Parameters might vary for each question!
     
     # LLM Logits Config
     model: str = "gpt-3.5-turbo-16k"

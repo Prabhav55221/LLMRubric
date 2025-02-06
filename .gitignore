@@ -33,7 +33,7 @@ outputs/*.log
 *.out
 
 outputs/calibration_results
-models/
+models/*
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

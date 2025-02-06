@@ -10,73 +10,117 @@ import torch.nn as nn
 
 class CalibrationNetwork(nn.Module):
     """
-    Judge-specific calibration network with multi-task learning
-    
-    Architecture:
-    - Two hidden layers with shared + judge-specific parameters
-    - Multi-task output heads for each rubric question
-    - Two-phase training (pre-training + fine-tuning)
+    Judge-specific calibration network with multi-task learning.
+    Implements equations (3)-(5) from the paper.
     
     Args:
-        num_judges (int): Number of distinct judges in data
-        input_dim (int): Input dimension (questions * options)
+        num_judges (int): Number of distinct judges
+        num_questions (int): Number of questions in rubric
+        options_per_q (int): Number of options per question
         h1 (int): First hidden layer size
         h2 (int): Second hidden layer size
     """
-    def __init__(self, num_judges=12, num_question = 7, input_dim=35, h1=50, h2=50):
+    def __init__(self, num_judges=12, num_questions=7, options_per_q=5, h1=50, h2=50):
         super().__init__()
         self.num_judges = num_judges
-        self.num_questions = num_question
+        self.num_questions = num_questions
+        self.options_per_q = options_per_q
         
-        # Shared weights
-        self.W1 = nn.Linear(input_dim + 1, h1)  # Input + bias
-        self.W2 = nn.Linear(h1 + 1, h2)
+        # Shared weights for each question
+        self.W1 = nn.ModuleList([
+            nn.Linear(options_per_q + 1, h1, bias=False) 
+            for _ in range(num_questions)
+        ])
         
-        # Judge-specific weights
-        self.W1_a = nn.ModuleList([nn.Linear(input_dim + 1, h1) for _ in range(num_judges)])
-        self.W2_a = nn.ModuleList([nn.Linear(h1 + 1, h2) for _ in range(num_judges)])
+        # Judge-specific weights (same input dimension)
+        self.W1_a = nn.ModuleList([
+            nn.ModuleList([
+                nn.Linear(options_per_q + 1, h1, bias=False)
+                for _ in range(num_questions)
+            ])
+            for _ in range(num_judges)
+        ])
+
+        # Second layer takes h1 + 1 as input (adding bias)
+        self.W2 = nn.Linear(h1 + 1, h2, bias=False)
+        self.W2_a = nn.ModuleList([
+            nn.Linear(h1 + 1, h2, bias=False) 
+            for _ in range(num_judges)
+        ])
         
-        # Question-specific output heads
-        self.V = nn.ModuleList([nn.Linear(h2 + 1, self.num_questions - 2) for _ in range(self.num_questions)])
+        # Output layer takes h2 + 1 as input
+        self.V = nn.ModuleList([
+            nn.Linear(h2 + 1, options_per_q, bias=False)
+            for _ in range(num_questions)
+        ])
+        
         self.V_a = nn.ModuleList([
-            nn.ModuleList([nn.Linear(h2 + 1, self.num_questions - 2) for _ in range(self.num_questions)])
+            nn.ModuleList([
+                nn.Linear(h2 + 1, options_per_q, bias=False)
+                for _ in range(num_questions)
+            ])
             for _ in range(num_judges)
         ])
 
     def forward(self, x, judge_ids):
         """
-        Forward pass with judge-specific computations
+        Forward pass implementing equations (3)-(5) from paper
         
         Args:
-            x (Tensor): Input probabilities (batch_size x 35)
+            x (Tensor): Input probabilities (batch_size x num_questions x options_per_q)
             judge_ids (Tensor): Judge IDs (batch_size,)
             
         Returns:
-            list: List of output distributions for each question (batch_size x 5)
+            list: List of output distributions for each question
         """
         batch_size = x.shape[0]
+        device = x.device
         
-        # Add bias and compute first hidden layer
-        x = torch.cat([x, torch.ones(batch_size, 1, device=x.device)], dim=1)
-        z1 = torch.relu(
-            self.W1(x) + 
-            torch.stack([self.W1_a[jid](x[i]) for i, jid in enumerate(judge_ids)])
-        )
+        # Split input by question
+        x_by_q = x.view(batch_size, self.num_questions, -1)
         
-        # Second hidden layer
-        z1 = torch.cat([z1, torch.ones(batch_size, 1, device=x.device)], dim=1)
-        z2 = torch.relu(
-            self.W2(z1) + 
-            torch.stack([self.W2_a[jid](z1[i]) for i, jid in enumerate(judge_ids)])
-        )
-        
-        # Compute question outputs
-        z2 = torch.cat([z2, torch.ones(batch_size, 1, device=x.device)], dim=1)
         outputs = []
         for q in range(self.num_questions):
-            out_q = self.V[q](z2) + torch.stack([
-                self.V_a[jid][q](z2[i]) for i, jid in enumerate(judge_ids)
-            ])
+
+            x_q = torch.cat([
+                torch.ones(batch_size, 1, device=device),
+                x_by_q[:, q]
+            ], dim=1)
+            
+            z1 = []
+            for i, jid in enumerate(judge_ids):
+                shared = self.W1[q](x_q[i])
+                judge_specific = self.W1_a[jid][q](x_q[i])
+                z1.append(shared + judge_specific)
+            z1 = torch.stack(z1)
+            z1 = torch.relu(z1)
+            
+            z1 = torch.cat([
+                torch.ones(batch_size, 1, device=device),
+                z1
+            ], dim=1)
+            
+            z2 = []
+            for i, jid in enumerate(judge_ids):
+                shared = self.W2(z1[i])
+                judge_specific = self.W2_a[jid](z1[i])
+                z2.append(shared + judge_specific)
+            z2 = torch.stack(z2)
+            z2 = torch.relu(z2)
+            
+            z2 = torch.cat([
+                torch.ones(batch_size, 1, device=device),
+                z2
+            ], dim=1)
+            
+            out_q = []
+            for i, jid in enumerate(judge_ids):
+                shared = self.V[q](z2[i])
+                judge_specific = self.V_a[jid][q](z2[i])
+                out_q.append(shared + judge_specific)
+            out_q = torch.stack(out_q)
+            
+            # Apply softmax for probability distribution
             outputs.append(torch.softmax(out_q, dim=1))
             
         return outputs

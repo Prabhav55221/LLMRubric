@@ -8,7 +8,6 @@ LLM rubric scores with human evaluations.
 
 import json
 import yaml
-import argparse
 import pandas as pd
 import numpy as np
 import torch
@@ -19,12 +18,11 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from scipy.stats import pearsonr, spearmanr, kendalltau
 
-# SRC
 from src.network import CalibrationNetwork
 from src.config import Config
 from src.dataset import RubricDataset
 
-def train_model(model, dataloader, epochs, optimizer, phase='pre-train'):
+def train_model(model, dataloader, epochs, optimizer, logger, phase='pre-train'):
     """
     Training loop with phase-specific objective
     
@@ -40,25 +38,25 @@ def train_model(model, dataloader, epochs, optimizer, phase='pre-train'):
     
     for epoch in range(epochs):
         total_loss = 0
+
         for x_batch, y_batch, j_batch in dataloader:
-            
+
+            x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
             outputs = model(x_batch, j_batch)
             loss = 0
 
             if phase == 'pre-train':
-                # Multi-task loss for all questions
                 for q in range(model.num_questions):
                     loss += criterion(outputs[q], y_batch[:, q])
             else:
-                # Focus on main task (Q0)
-                loss = criterion(outputs[model.num_questions - 1], y_batch[:, model.num_questions - 1])
+                loss = criterion(outputs[0], y_batch[:, 0])
                 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
             
-        print(f"{phase} Epoch {epoch+1}/{epochs} | Loss: {total_loss/len(dataloader):.4f}")
+        logger.info(f"{phase} Epoch {epoch+1}/{epochs} | Loss: {total_loss/len(dataloader):.4f}")
 
 def evaluate_model(model, dataloader):
     """
@@ -73,12 +71,15 @@ def evaluate_model(model, dataloader):
     
     with torch.no_grad():
         for x_batch, y_batch, j_batch in dataloader:
+
+            x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
             outputs = model(x_batch, j_batch)
+            
             # Get expected value for Q0
-            pred_probs = outputs[model.num_questions - 1].cpu().numpy()
-            pred_scores = np.sum(pred_probs * np.arange(1,model.num_questions - 1), axis=1)
+            pred_probs = outputs[0].cpu().numpy()
+            pred_scores = np.sum(pred_probs * np.arange(1, model.options_per_q + 1), axis=1)
             predictions.extend(pred_scores)
-            true_scores.extend(y_batch[:,model.num_questions - 1].cpu().numpy())
+            true_scores.extend(y_batch[:, 0].cpu().numpy())
     
     # Calculate metrics
     rmse = np.sqrt(np.mean((np.array(predictions) - np.array(true_scores))**2))
@@ -93,19 +94,10 @@ def evaluate_model(model, dataloader):
         'kendall': kendall
     }
 
-def grid_search_cv(dataset, param_grid, input_dim):
+def grid_search_cv(dataset, param_grid):
     """
     Perform Grid Search with 5-fold Cross-Validation to find the best hyperparameters.
-    
-    Args:
-        dataset (Dataset): The dataset used for training.
-        param_grid (dict): Dictionary of hyperparameters to search over.
-        input_dim (int): Input dimension of probabilities
-
-    Returns:
-        dict: Best hyperparameters found.
     """
-
     best_params = None
     best_loss = float("inf")
     kfold = KFold(n_splits=5, shuffle=True, random_state=Config.seed)
@@ -119,7 +111,14 @@ def grid_search_cv(dataset, param_grid, input_dim):
             train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
             val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
 
-            model = CalibrationNetwork(num_judges=Config.num_judges, input_dim=input_dim, h1=h1, h2=h2).to(Config.device)
+            model = CalibrationNetwork(
+                num_judges=Config.num_judges,
+                num_questions=Config.num_questions,
+                options_per_q=Config.num_options,
+                h1=h1,
+                h2=h2
+            ).to(Config.device)
+            
             optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
             criterion = nn.CrossEntropyLoss()
 
@@ -127,8 +126,9 @@ def grid_search_cv(dataset, param_grid, input_dim):
             for epoch in range(num_epochs):
                 model.train()
                 for x_batch, y_batch, j_batch in train_loader:
+                    x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
                     outputs = model(x_batch, j_batch)
-                    loss = sum(criterion(outputs[q], y_batch[:, q]) for q in range(Config.num_questions))  # Multi-task loss
+                    loss = sum(criterion(outputs[q], y_batch[:, q]) for q in range(Config.num_questions))
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
@@ -138,6 +138,7 @@ def grid_search_cv(dataset, param_grid, input_dim):
             val_losses = []
             with torch.no_grad():
                 for x_batch, y_batch, j_batch in val_loader:
+                    x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
                     outputs = model(x_batch, j_batch)
                     loss = sum(criterion(outputs[q], y_batch[:, q]) for q in range(Config.num_questions))
                     val_losses.append(loss.item())
@@ -155,14 +156,7 @@ def grid_search_cv(dataset, param_grid, input_dim):
 def calibrate(csv_path, json_path, dataset_yaml, logger):
     """
     Calibrate function for training and evaluating the calibration network.
-
-    Args:
-        csv_path (str): Path to CSV containing human scores and judge IDs.
-        dataset_yaml (str): Path to dataset YAML.
-        json_path (str): Path to JSON file with LLM probability outputs.
-        logger (logging.Logger): Logger for tracking API calls and errors.
     """
-
     use_cuda = "cuda" if torch.cuda.is_available() else "cpu"
     if use_cuda:
         logger.info('USING GPU Acceleration!')
@@ -191,8 +185,7 @@ def calibrate(csv_path, json_path, dataset_yaml, logger):
     # Create dataset
     dataset = RubricDataset(llm_outputs, human_scores, judge_ids)
 
-    # Define hyperparameter grid for Grid Search CV
-    input_dim = Config.num_questions * Config.num_options
+    # Define hyperparameter grid
     param_grid = {
         "h1": [50, 100],
         "h2": [64, 128],
@@ -203,23 +196,21 @@ def calibrate(csv_path, json_path, dataset_yaml, logger):
 
     logger.info('Searching for best parameters with Grid CV!')
 
-    # Perform Grid Search Cross-Validation
-    best_params = grid_search_cv(dataset, param_grid, input_dim)
-
+    best_params = grid_search_cv(dataset, param_grid)
     logger.info(f"Best Parameters found: {best_params}")
 
     # Initialize final model with best parameters
     model = CalibrationNetwork(
-        num_judges=len(set(judge_ids)), 
-        input_dim=input_dim, 
-        h1=best_params["h1"], 
-        h2=best_params["h2"],
-        num_question=Config.num_questions
+        num_judges=len(set(judge_ids)),
+        num_questions=Config.num_questions,
+        options_per_q=Config.num_options,
+        h1=best_params["h1"],
+        h2=best_params["h2"]
     ).to(Config.device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=best_params["lr"])
 
-    # Split dataset into training and validation
+    # Split dataset
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
@@ -227,20 +218,16 @@ def calibrate(csv_path, json_path, dataset_yaml, logger):
     train_loader = DataLoader(train_dataset, batch_size=best_params["batch_size"], shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=best_params["batch_size"], shuffle=False)
 
-    # **Pre-training Phase**
     logger.info('\n\n---PRETRAINING STEP---')
-    train_model(model, train_loader, best_params["num_epochs"], optimizer, phase="pre-train")
+    train_model(model, train_loader, best_params["num_epochs"], optimizer, logger, phase="pre-train")
 
-    # **Fine-tuning Phase**
     logger.info('\n\n---FINETUNING STEP---')
-    train_model(model, train_loader, best_params["num_epochs"], optimizer, phase="fine-tune")
+    train_model(model, train_loader, best_params["num_epochs"], optimizer, logger, phase="fine-tune")
 
-    # Evaluate the model
     metrics = evaluate_model(model, val_loader)
-    print("\nEvaluation Metrics:", metrics)
+    logger.info("\nEvaluation Metrics:", metrics)
 
-    # Save the model
     torch.save(model.state_dict(), Config.model_save_dir)
-    print("Model saved successfully!")
+    logger.info("Model saved successfully!")
 
     return metrics
