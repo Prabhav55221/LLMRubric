@@ -11,8 +11,8 @@ import torch.nn as nn
 class CalibrationNetwork(nn.Module):
     """
     Judge-specific calibration network with multi-task learning.
-    Implements equations (3)-(5) from the paper.
-    
+    Optimized implementation using tensor operations.
+
     Args:
         num_judges (int): Number of distinct judges
         num_questions (int): Number of questions in rubric
@@ -26,101 +26,84 @@ class CalibrationNetwork(nn.Module):
         self.num_questions = num_questions
         self.options_per_q = options_per_q
         
-        # Shared weights for each question
-        self.W1 = nn.ModuleList([
-            nn.Linear(options_per_q + 1, h1, bias=False) 
-            for _ in range(num_questions)
-        ])
+        # First layer parameters
+        self.W1 = nn.Parameter(
+            torch.randn((num_questions, options_per_q + 1, h1))
+        )
+        self.W1_a = nn.Parameter(
+            torch.randn((num_judges, num_questions, options_per_q + 1, h1))
+        )
         
-        # Judge-specific weights (same input dimension)
-        self.W1_a = nn.ModuleList([
-            nn.ModuleList([
-                nn.Linear(options_per_q + 1, h1, bias=False)
-                for _ in range(num_questions)
-            ])
-            for _ in range(num_judges)
-        ])
+        # Second layer parameters
+        self.W2 = nn.Parameter(
+            torch.randn((h1 + 1, h2))
+        )
+        self.W2_a = nn.Parameter(
+            torch.randn((num_judges, h1 + 1, h2))
+        )
+        
+        # Output layer parameters
+        self.V = nn.Parameter(
+            torch.randn((num_questions, h2 + 1, options_per_q))
+        )
+        self.V_a = nn.Parameter(
+            torch.randn((num_judges, num_questions, h2 + 1, options_per_q))
+        )
 
-        # Second layer takes h1 + 1 as input (adding bias)
-        self.W2 = nn.Linear(h1 + 1, h2, bias=False)
-        self.W2_a = nn.ModuleList([
-            nn.Linear(h1 + 1, h2, bias=False) 
-            for _ in range(num_judges)
-        ])
-        
-        # Output layer takes h2 + 1 as input
-        self.V = nn.ModuleList([
-            nn.Linear(h2 + 1, options_per_q, bias=False)
-            for _ in range(num_questions)
-        ])
-        
-        self.V_a = nn.ModuleList([
-            nn.ModuleList([
-                nn.Linear(h2 + 1, options_per_q, bias=False)
-                for _ in range(num_questions)
-            ])
-            for _ in range(num_judges)
-        ])
+        # Initialize parameters
+        for param in [self.W1, self.W1_a, self.W2, self.W2_a, self.V, self.V_a]:
+            nn.init.xavier_uniform_(param)
 
     def forward(self, x, judge_ids):
         """
-        Forward pass implementing equations (3)-(5) from paper
+        Forward pass using efficient tensor operations
         
         Args:
             x (Tensor): Input probabilities (batch_size x num_questions x options_per_q)
             judge_ids (Tensor): Judge IDs (batch_size,)
-            
-        Returns:
-            list: List of output distributions for each question
         """
         batch_size = x.shape[0]
         device = x.device
         
-        # Split input by question
-        x_by_q = x.view(batch_size, self.num_questions, -1)
+        # Add bias to input
+        x = x.view(batch_size, self.num_questions, -1)
+        x_bias = torch.cat([
+            torch.ones(batch_size, self.num_questions, 1, device=device),
+            x
+        ], dim=2)
         
+        # First layer
+        W1_combined = self.W1 + self.W1_a[judge_ids]
+        z1 = torch.einsum('bqi,bqih->bqh', x_bias, W1_combined)
+        z1 = torch.sigmoid(z1)
+        
+        # Add bias to first layer output
+        z1_bias = torch.cat([
+            torch.ones(batch_size, self.num_questions, 1, device=device),
+            z1
+        ], dim=2)
+        
+        # Second layer - expand W2 for all questions
+        W2_combined = (self.W2[None, None, :, :] + 
+                      self.W2_a[judge_ids, None, :, :])
+        z2 = torch.einsum('bqi,bqih->bqh', z1_bias, 
+                         W2_combined.expand(-1, self.num_questions, -1, -1))
+        z2 = torch.sigmoid(z2)
+        
+        # Add bias to second layer output
+        z2_bias = torch.cat([
+            torch.ones(batch_size, self.num_questions, 1, device=device),
+            z2
+        ], dim=2)
+        
+        # Output layer
+        V_combined = self.V + self.V_a[judge_ids]
+        logits = torch.einsum('bqi,bqih->bqh', z2_bias, V_combined)
+        
+        # Split by questions and apply softmax
         outputs = []
         for q in range(self.num_questions):
-
-            x_q = torch.cat([
-                torch.ones(batch_size, 1, device=device),
-                x_by_q[:, q]
-            ], dim=1)
-            
-            z1 = []
-            for i, jid in enumerate(judge_ids):
-                shared = self.W1[q](x_q[i])
-                judge_specific = self.W1_a[jid][q](x_q[i])
-                z1.append(shared + judge_specific)
-            z1 = torch.stack(z1)
-            z1 = torch.relu(z1)
-            
-            z1 = torch.cat([
-                torch.ones(batch_size, 1, device=device),
-                z1
-            ], dim=1)
-            
-            z2 = []
-            for i, jid in enumerate(judge_ids):
-                shared = self.W2(z1[i])
-                judge_specific = self.W2_a[jid](z1[i])
-                z2.append(shared + judge_specific)
-            z2 = torch.stack(z2)
-            z2 = torch.relu(z2)
-            
-            z2 = torch.cat([
-                torch.ones(batch_size, 1, device=device),
-                z2
-            ], dim=1)
-            
-            out_q = []
-            for i, jid in enumerate(judge_ids):
-                shared = self.V[q](z2[i])
-                judge_specific = self.V_a[jid][q](z2[i])
-                out_q.append(shared + judge_specific)
-            out_q = torch.stack(out_q)
-            
-            # Apply softmax for probability distribution
-            outputs.append(torch.softmax(out_q, dim=1))
+            out_q = torch.softmax(logits[:, q], dim=1)
+            outputs.append(out_q)
             
         return outputs
