@@ -12,9 +12,18 @@ and retry policies.
 import os
 import torch
 from dotenv import load_dotenv
-from typing import Dict
+from typing import Dict, List
 from dataclasses import dataclass, field
-from typing import Optional
+
+@dataclass
+class LLMConfig:
+    """
+    Configuration for a specific model.
+    """
+
+    temperatures: List[float]
+    max_tokens: int = 5
+    top_logprobs: int = 5
 
 @dataclass
 class Config:
@@ -23,8 +32,7 @@ class Config:
 
     Attributes:
         openai_api_key (str): API key for authentication with OpenAI's API.
-        model (str): LLM model to use.
-        temperature (float): Sampling temperature.
+        models (Dict[str, LLMConfig]): Mapping each LLM to name, temperatures and configs!
         cache_dir (str): Directory for API response caching.
         batch_size (int): Number of requests processed in parallel.
         max_retries (int): Max retry attempts for API failures.
@@ -40,32 +48,47 @@ class Config:
         model_save_dir (str): Path to save trained model.
         device (str): Computation device (CPU/GPU).
     """
-
+    
     # Load API Key from Environment Variables
     load_dotenv()
     openai_api_key: str = os.getenv("OPENAI_API_KEY")
-
-    # Add maps to different questions!
-    # Parameters might vary for each question!
     
-    # LLM Logits Config
-    model: str = "gpt-3.5-turbo-16k"
-    temperature: float = 0.8
+    # Model Configs
+    models: Dict[str, LLMConfig] = field(default_factory=lambda: {
+        "gpt-3.5-turbo-16k": LLMConfig(temperatures=[0.1, 0.5, 0.8])
+    })
+    
+    # Cache and API Configs
     cache_dir: str = "cache"
     batch_size: int = 5
     max_retries: int = 3
     retry_delay: int = 1
     cache_expiry_days: int = 7
-
-    # Calibration Configs
+    
+    # Calibration Configs  
     num_questions: int = 7
     num_judges: int = 15
     num_options: int = 5
-
+    
     # Network Training Configs
     num_folds: int = 5
     seed: int = 42
-    batch_size: int = 32  # Training batch size
-
+    batch_size: int = 32
     model_save_dir: str = "/export/fs06/psingh54/LLMRubric/models/calibration_model.pth"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+
+    def get_model_combinations(self) -> List[tuple]:
+        """
+        Returns list of all model-temperature combinations.
+        """
+        combinations = []
+        for model_name, config in self.models.items():
+            for temp in config.temperatures:
+                combinations.append((model_name, temp))
+        return combinations
+
+    def get_dataset_expansion_factor(self) -> int:
+        """
+        Returns how many times the dataset will expand.
+        """
+        return sum(len(config.temperatures) for config in self.models.values())

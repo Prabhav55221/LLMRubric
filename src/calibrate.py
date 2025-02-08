@@ -39,10 +39,11 @@ def train_model(model, dataloader, epochs, optimizer, logger, phase='pre-train')
     for epoch in range(epochs):
         total_loss = 0
 
-        for x_batch, y_batch, j_batch in dataloader:
+        for x_batch, y_batch, j_batch, model_temp_batch in dataloader:
 
             x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
             outputs = model(x_batch, j_batch)
+
             loss = 0
 
             if phase == 'pre-train':
@@ -66,33 +67,45 @@ def evaluate_model(model, dataloader):
         dict: Dictionary of evaluation metrics (RMSE, correlations)
     """
     model.eval()
-    predictions = []
-    true_scores = []
+    predictions = {}
+    true_scores = {}
     
     with torch.no_grad():
-        for x_batch, y_batch, j_batch in dataloader:
-
+        for x_batch, y_batch, j_batch, (model_name, temp) in dataloader:
+            key = f"{model_name}_{temp}"
+            if key not in predictions:
+                predictions[key] = []
+                true_scores[key] = []
+            
             x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
             outputs = model(x_batch, j_batch)
             
-            # Get expected value for Q0
             pred_probs = outputs[0].cpu().numpy()
             pred_scores = np.sum(pred_probs * np.arange(1, model.options_per_q + 1), axis=1)
-            predictions.extend(pred_scores)
-            true_scores.extend(y_batch[:, 0].cpu().numpy())
+            predictions[key].extend(pred_scores)
+            true_scores[key].extend(y_batch[:, 0].cpu().numpy())
     
-    # Calculate metrics
-    rmse = np.sqrt(np.mean((np.array(predictions) - np.array(true_scores))**2))
-    pearson = pearsonr(predictions, true_scores)[0]
-    spearman = spearmanr(predictions, true_scores)[0]
-    kendall = kendalltau(predictions, true_scores)[0]
+    # Calculate metrics per model-temp combo
+    metrics = {}
+    for key in predictions:
+        metrics[key] = {
+            'rmse': np.sqrt(np.mean((np.array(predictions[key]) - np.array(true_scores[key]))**2)),
+            'pearson': pearsonr(predictions[key], true_scores[key])[0],
+            'spearman': spearmanr(predictions[key], true_scores[key])[0],
+            'kendall': kendalltau(predictions[key], true_scores[key])[0]
+        }
     
-    return {
-        'rmse': rmse,
-        'pearson': pearson,
-        'spearman': spearman,
-        'kendall': kendall
+    # Also add overall metrics
+    all_preds = [p for preds in predictions.values() for p in preds]
+    all_true = [t for trues in true_scores.values() for t in trues]
+    metrics['overall'] = {
+        'rmse': np.sqrt(np.mean((np.array(all_preds) - np.array(all_true))**2)),
+        'pearson': pearsonr(all_preds, all_true)[0],
+        'spearman': spearmanr(all_preds, all_true)[0],
+        'kendall': kendalltau(all_preds, all_true)[0]
     }
+    
+    return metrics
 
 def grid_search_cv(dataset, param_grid):
     """
@@ -183,7 +196,8 @@ def calibrate(csv_path, json_path, dataset_yaml, logger):
     human_scores = human_scores.astype(float)
 
     # Create dataset
-    dataset = RubricDataset(llm_outputs, human_scores, judge_ids)
+    config = Config()
+    dataset = RubricDataset(llm_outputs, human_scores, judge_ids, config)
 
     # Define hyperparameter grid
     param_grid = {
@@ -211,9 +225,9 @@ def calibrate(csv_path, json_path, dataset_yaml, logger):
     optimizer = torch.optim.AdamW(model.parameters(), lr=best_params["lr"])
 
     # Split dataset
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    train_indices, val_indices = dataset.get_split_indices(train_ratio=0.8)
+    train_dataset = torch.utils.data.Subset(dataset, train_indices)
+    val_dataset = torch.utils.data.Subset(dataset, val_indices)
 
     train_loader = DataLoader(train_dataset, batch_size=best_params["batch_size"], shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=best_params["batch_size"], shuffle=False)

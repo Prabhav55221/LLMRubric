@@ -55,8 +55,6 @@ def main():
     parser = argparse.ArgumentParser(description="LLM-RUBRIC Conversation Evaluation")
     parser.add_argument("--dataset", type=str, required=True, help="Path to Dataset YAML. Ensure it follows structure shown in ReadMe!")
     parser.add_argument("--output", type=str, default="/export/fs06/psingh54/LLMRubric/outputs", help="Output directory for logs and intermediate outputs.")
-    parser.add_argument("--model", type=str, default="gpt-3.5-turbo-16k", help="OpenAI model to use")
-    parser.add_argument("--temperature", type=float, default=0.8, help="Temperature for sampling")
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
@@ -72,8 +70,6 @@ def main():
         # Load configuration
         # TODO: Implement calibration configs once implemented.
         config = Config(
-            model=args.model,
-            temperature=args.temperature,
             cache_dir=str(output_dir / "cache")
         )
 
@@ -105,17 +101,27 @@ def main():
         text_units = list(df['TEXT'].values)
         logger.info(f"Evaluation will be for {len(text_units)} text units.")
 
+        # all_results = []
+        # for i in tqdm(text_units):
+        #     unit = '\n' + i
+        #     # Run evaluation
+        #     result = evaluator.evaluate_conversation(unit, llm_caller)
+        #     all_results.append(result.results)
+
         all_results = []
         for i in tqdm(text_units):
             unit = '\n' + i
-            # Run evaluation
-            result = evaluator.evaluate_conversation(unit, llm_caller)
-            all_results.append(result.results)
+            results = evaluator.evaluate_conversation(unit, llm_caller)
+            all_results.extend(results)
 
         # Save results
         output_file = output_dir / f"llm_results/RESULTS_{experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        result.save(output_file, all_results)
+        EvaluationResult().save(output_file, [r.to_dict() for r in all_results])
         logger.info(f"LLM Probabilites saved to {output_file}")
+
+        original_size = len(text_units)
+        expanded_size = len(all_results)
+        logger.info(f"Dataset expanded from {original_size} to {expanded_size} examples")
 
         logger.info(f"========")
         logger.info(f"\nStage 1: Starting calibration with network!")

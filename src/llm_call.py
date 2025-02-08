@@ -43,13 +43,15 @@ class OpenAILLMCaller:
         self.logger = logger
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def _call_api(self, prompt: str, question_id: str) -> List[float]:
+    def _call_api(self, prompt: str, question_id: str, model: str, temperature: float) -> List[float]:
         """
         Calls OpenAI API and retrieves log probabilities for options.
 
         Args:
             prompt (str): The input prompt to send to OpenAI.
             question_id (str): The question ID from the rubric.
+            model (str): OpenAI Model Version
+            temperature (float): Temperature to sample at
 
         Returns:
             List[float]: A list of unnormalized probabilities corresponding to options.
@@ -68,11 +70,11 @@ class OpenAILLMCaller:
 
             response = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model=self.config.model,
-                temperature=self.config.temperature,
-                max_tokens=n_options,  # Dynamically set based on options count
+                model=model,
+                temperature=temperature,
+                max_tokens=n_options,
                 logprobs=True,
-                top_logprobs=n_options  # Dynamically set based on options count
+                top_logprobs=n_options
             )
 
             # Extract log-probabilities for valid tokens (option indices)
@@ -108,30 +110,37 @@ class OpenAILLMCaller:
             question_id (str): The question ID from the rubric.
 
         Returns:
-            List[float]: A probability distribution over valid options.
+            Returns: Dict[str, Dict[str, List[float]]]: Nested dict with structure: {model_name: {temperature: probabilities}}
         """
-        cache_key = f"{question_id}-{prompt}"
 
-        # Check cache before calling the API
-        cached_result = self.cache.get(cache_key)
-        if cached_result is not None:
-            # self.logger.warning("Found Existing Cache. Using it. Please Abort if not intended behaviour!")
-            return cached_result
+        results = {}
 
-        try:
-            probabilities = self._call_api(prompt, question_id)
+        # Loop over all possible model configuration
+        for model_name, model_config in self.config.models.items():
 
-            # Store the result in cache
-            self.cache.set(cache_key, probabilities)
+            results[model_name] = {}
 
-            return probabilities
+            for temp in model_config.temperatures:
 
-        except Exception as e:
-            self.logger.error(f"Error in LLM call for {question_id}: {e}")
-            # Return uniform probability as fallback
-            n_options = len(self.rubric[question_id]["options"])
-            return [1.0 / n_options] * n_options
+                # Change Cache Key!
+                cache_key = f"{question_id}-{prompt}-{model_name}-{temp}"
+                cached_result = self.cache.get(cache_key, model_name, temp)
 
+                if cached_result is not None:
+                    results[model_name][temp] = cached_result
+                    continue
+
+                try:
+                    probabilities = self._call_api(prompt, question_id, model_name, temp)
+                    self.cache.set(cache_key, model_name, temp, probabilities)
+                    results[model_name][temp] = probabilities
+
+                except Exception as e:
+                    self.logger.error(f"Error in LLM call for {question_id} with {model_name}, temp {temp}: {e}")
+                    n_options = len(self.rubric[question_id]["options"])
+                    results[model_name][temp] = [1.0 / n_options] * n_options
+
+        return results
 
 class LLMEvaluator:
     """
@@ -231,7 +240,7 @@ class LLMEvaluator:
             OPTIONS=formatted_options
         )
     
-    def evaluate_conversation(self, text_unit: str, llm_caller) -> EvaluationResult:
+    def evaluate_conversation(self, text_unit: str, llm_caller) -> List[EvaluationResult]:
         """
         Create object of type EvaluationResult.
         For each question in Rubric, evaluate using prompt and get probability distribution!
@@ -241,12 +250,22 @@ class LLMEvaluator:
             llm_caller (_type_): OpenAI LLM Caller API Class
 
         Returns:
-            EvaluationResult: Object with results stored within.
+            List[EvaluationResult]: List of objects with results stored within.
         """
-        result = EvaluationResult()
-        for q_id in self.rubric.keys():
-            prompt = self.generate_prompt(text_unit, q_id)
-            probs = llm_caller(prompt, q_id)
-            result.add_result(q_id, probs)
 
-        return result
+        results = []
+        
+        for model_name, model_config in llm_caller.config.models.items():
+            for temp in model_config.temperatures:
+                result = EvaluationResult()
+                result.model = model_name
+                result.temperature = temp
+                
+                for q_id in self.rubric.keys():
+                    prompt = self.generate_prompt(text_unit, q_id)
+                    probs = llm_caller(prompt, q_id)[model_name][temp]
+                    result.add_result(q_id, probs)
+                
+                results.append(result)
+
+        return results
