@@ -31,7 +31,6 @@ class RubricDataset(Dataset):
         
         # Process LLM probabilities for all model-temp combinations
         self.llm_probs = []
-        self.model_temp_indices = []
         
         # For each text example
         for probs in llm_probs:
@@ -45,7 +44,6 @@ class RubricDataset(Dataset):
             ], dtype=torch.float32)
             
             self.llm_probs.append(prob_tensor)
-            self.model_temp_indices.append((model_name, temp))
         
         self.llm_probs = torch.stack(self.llm_probs)
         
@@ -56,8 +54,7 @@ class RubricDataset(Dataset):
         return (
             self.llm_probs[idx],  # LLM probabilities
             self.human_scores[idx],  # Human ratings
-            self.judge_ids[idx],  # Judge ID
-            self.model_temp_indices[idx]  # Which model-temp generated this prob
+            self.judge_ids[idx] # Judge ID
         )
 
     def get_split_indices(self, train_ratio=0.8):

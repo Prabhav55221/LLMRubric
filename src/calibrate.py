@@ -39,7 +39,7 @@ def train_model(model, dataloader, epochs, optimizer, logger, phase='pre-train')
     for epoch in range(epochs):
         total_loss = 0
 
-        for x_batch, y_batch, j_batch, model_temp_batch in dataloader:
+        for x_batch, y_batch, j_batch in dataloader:
 
             x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
             outputs = model(x_batch, j_batch)
@@ -67,42 +67,25 @@ def evaluate_model(model, dataloader):
         dict: Dictionary of evaluation metrics (RMSE, correlations)
     """
     model.eval()
-    predictions = {}
-    true_scores = {}
+    all_predictions = []
+    all_true_scores = []
     
     with torch.no_grad():
-        for x_batch, y_batch, j_batch, (model_name, temp) in dataloader:
-            key = f"{model_name}_{temp}"
-            if key not in predictions:
-                predictions[key] = []
-                true_scores[key] = []
-            
+        for x_batch, y_batch, j_batch in dataloader:
             x_batch = x_batch.view(-1, model.num_questions, model.options_per_q)
             outputs = model(x_batch, j_batch)
             
             pred_probs = outputs[0].cpu().numpy()
             pred_scores = np.sum(pred_probs * np.arange(1, model.options_per_q + 1), axis=1)
-            predictions[key].extend(pred_scores)
-            true_scores[key].extend(y_batch[:, 0].cpu().numpy())
+            
+            all_predictions.extend(pred_scores)
+            all_true_scores.extend(y_batch[:, 0].cpu().numpy())
     
-    # Calculate metrics per model-temp combo
-    metrics = {}
-    for key in predictions:
-        metrics[key] = {
-            'rmse': np.sqrt(np.mean((np.array(predictions[key]) - np.array(true_scores[key]))**2)),
-            'pearson': pearsonr(predictions[key], true_scores[key])[0],
-            'spearman': spearmanr(predictions[key], true_scores[key])[0],
-            'kendall': kendalltau(predictions[key], true_scores[key])[0]
-        }
-    
-    # Also add overall metrics
-    all_preds = [p for preds in predictions.values() for p in preds]
-    all_true = [t for trues in true_scores.values() for t in trues]
-    metrics['overall'] = {
-        'rmse': np.sqrt(np.mean((np.array(all_preds) - np.array(all_true))**2)),
-        'pearson': pearsonr(all_preds, all_true)[0],
-        'spearman': spearmanr(all_preds, all_true)[0],
-        'kendall': kendalltau(all_preds, all_true)[0]
+    metrics = {
+        'rmse': np.sqrt(np.mean((np.array(all_predictions) - np.array(all_true_scores))**2)),
+        'pearson': pearsonr(all_predictions, all_true_scores)[0],
+        'spearman': spearmanr(all_predictions, all_true_scores)[0],
+        'kendall': kendalltau(all_predictions, all_true_scores)[0]
     }
     
     return metrics
@@ -116,8 +99,11 @@ def grid_search_cv(dataset, param_grid):
     kfold = KFold(n_splits=5, shuffle=True, random_state=Config.seed)
 
     for h1, h2, batch_size, lr, num_epochs in tqdm(product(*param_grid.values())):
+
         losses = []
+
         for train_idx, val_idx in kfold.split(dataset):
+
             train_subset = torch.utils.data.Subset(dataset, train_idx)
             val_subset = torch.utils.data.Subset(dataset, val_idx)
 
