@@ -55,7 +55,7 @@ class Config:
     
     # Model Configs
     models: Dict[str, LLMConfig] = field(default_factory=lambda: {
-        "gpt-3.5-turbo-16k": LLMConfig(temperatures=[0.1, 0.5, 0.8])
+        "gpt-3.5-turbo-16k": LLMConfig(temperatures=[0.8])
     })
     
     # Cache and API Configs
@@ -76,6 +76,15 @@ class Config:
     batch_size: int = 32
     model_save_dir: str = "/export/fs06/psingh54/LLMRubric/models/calibration_model.pth"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Parameter Grid for GridCV
+    param_grid: dict = field(default_factory=lambda: {
+        "h1": [128],
+        "h2": [128],
+        "batch_size": [16, 32],
+        "lr": [0.001, 0.01],
+        "num_epochs": [50]
+    })
 
     def get_model_combinations(self) -> List[tuple]:
         """

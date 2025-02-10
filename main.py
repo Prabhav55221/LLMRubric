@@ -101,13 +101,6 @@ def main():
         text_units = list(df['TEXT'].values)
         logger.info(f"Evaluation will be for {len(text_units)} text units.")
 
-        # all_results = []
-        # for i in tqdm(text_units):
-        #     unit = '\n' + i
-        #     # Run evaluation
-        #     result = evaluator.evaluate_conversation(unit, llm_caller)
-        #     all_results.append(result.results)
-
         all_results = []
         for i in tqdm(text_units):
             unit = '\n' + i

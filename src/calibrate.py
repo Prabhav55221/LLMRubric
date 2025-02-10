@@ -186,13 +186,7 @@ def calibrate(csv_path, json_path, dataset_yaml, logger):
     dataset = RubricDataset(llm_outputs, human_scores, judge_ids, config)
 
     # Define hyperparameter grid
-    param_grid = {
-        "h1": [32, 64, 128],
-        "h2": [65, 128, 256],
-        "batch_size": [8, 16, 423],
-        "lr": [0.0001, 0.001, 0.05],
-        "num_epochs": [50]
-    }
+    param_grid = config.param_grid
 
     logger.info('Searching for best parameters with Grid CV!')
 
