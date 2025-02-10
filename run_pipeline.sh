@@ -8,7 +8,9 @@
 #SBATCH --mem-per-cpu=16G
 #SBATCH --nodes=1
 #SBATCH --gpus=1
-#SBATCH --partition=gpu
+#SBATCH --mem-per-cpu=8G
+#SBATCH --account=a100acct 
+#SBATCH --partition=gpu-a100
 #SBATCH --mail-user="psingh54@jhu.edu"
 
 source /home/psingh54/.bashrc

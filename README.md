@@ -69,6 +69,24 @@ Before running the module, be sure you understand the below structure of the cod
 
 We will define some of the inputs you need to setup here.
 
+### Configs
+
+Please set the configs as needed. Mostly the default configs should work, but here are some things you can change if needed in `src/config.py`:
+
+```python
+num_questions: int = 7  # Define the number of dimensions
+num_judges: int = 15    # Define the number of judges
+
+# Load API Key from Environment Variables - Change if any other location!
+load_dotenv()
+openai_api_key: str = os.getenv("OPENAI_API_KEY")
+
+# Define model names and temperatures!
+models: Dict[str, LLMConfig] = field(default_factory=lambda: {
+    "gpt-3.5-turbo-16k": LLMConfig(temperatures=[0.1, 0.5, 0.8])
+})
+```
+
 ### Dataset
 
 The module can support any text based input for evalutaion. Ideally, we require a CSV with the *at least* the following columns (You can have as many evaluation dimensions as you want - **as long as you keep one overall dimension**):
@@ -146,10 +164,6 @@ rubric:
     scale_type: "ordinal"
     response_type: "multiple_choice"
 ```
-
-## Configs
-
-Finally, set up (if needed), configs in `src/config.py`. The file should be self-explanatory!
 
 ## Running It!
 

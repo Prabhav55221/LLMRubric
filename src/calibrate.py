@@ -187,11 +187,11 @@ def calibrate(csv_path, json_path, dataset_yaml, logger):
 
     # Define hyperparameter grid
     param_grid = {
-        "h1": [50, 100],
-        "h2": [64, 128],
-        "batch_size": [16],
-        "lr": [0.0001, 0.001],
-        "num_epochs": [30]
+        "h1": [32, 64, 128],
+        "h2": [65, 128, 256],
+        "batch_size": [8, 16, 423],
+        "lr": [0.0001, 0.001, 0.05],
+        "num_epochs": [50]
     }
 
     logger.info('Searching for best parameters with Grid CV!')
