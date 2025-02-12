@@ -75,7 +75,6 @@ class OpenAILLMCaller:
         """
 
         try:
-            # Get the number of options for the given question from the rubric
             if question_id not in self.rubric:
                 raise ValueError(f"Question ID {question_id} not found in rubric.")
 
@@ -92,27 +91,30 @@ class OpenAILLMCaller:
                 top_logprobs=n_options
             )
 
-            # Extract log-probabilities for valid tokens (option indices)
+            # Extract log-probabilities
             token_logprobs: Dict[str, float] = {}
             for i in response.choices[0].logprobs.content[0].top_logprobs:
                 token = i.token.strip()
                 logprob = i.logprob
-                if int(token) in options.keys():  # Ensure we only get valid option keys
+                if int(token) in options.keys():
                     token_logprobs[token] = float(logprob)
 
-            # Convert log-probs to unnormalized probabilities
-            logprobs_array = np.array([
-                token_logprobs.get(str(i + 1), float('-inf')) for i in range(n_options)
+            # Create logits array
+            logits_array = np.array([
+                token_logprobs.get(str(i + 1), float('-inf')) 
+                for i in range(n_options)
             ])
 
-            # Exponentiate log-probs (no softmax, unnormalized probabilities)
-            probs = np.exp(logprobs_array)
-            return probs.tolist()
+            # Get probabilities
+            probs = np.exp(logits_array)
+            
+            return probs.tolist(), logits_array.tolist()
 
         except Exception as e:
             self.logger.error(f"Error in API call for {question_id}: {e}")
-            # Return uniform probability in case of failure
-            return [1.0 / n_options] * n_options
+            uniform_prob = [1.0 / n_options] * n_options
+            uniform_logit = [np.log(1.0 / n_options)] * n_options
+            return uniform_prob, uniform_logit
 
     def __call__(self, prompt: str, question_id: str) -> List[float]:
         """
