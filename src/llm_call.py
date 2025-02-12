@@ -130,30 +130,45 @@ class OpenAILLMCaller:
 
         results = {}
 
-        # Loop over all possible model configuration
         for model_name, model_config in self.config.models.items():
-
             results[model_name] = {}
+            
+            # Sort temperatures and use the last one as base
+            temps = sorted(model_config.temperatures)
+            base_temp = temps[-1]
+            
+            # Try to get from cache first
+            cache_key = f"{question_id}-{prompt}-{model_name}-{base_temp}"
+            cached_result = self.cache.get(cache_key, model_name, base_temp)
+            cached_logits = self.cache.get(f"{cache_key}_logits", model_name, base_temp)
 
-            for temp in model_config.temperatures:
-
-                # Change Cache Key!
-                cache_key = f"{question_id}-{prompt}-{model_name}-{temp}"
-                cached_result = self.cache.get(cache_key, model_name, temp)
-
-                if cached_result is not None:
-                    results[model_name][temp] = cached_result
-                    continue
-
+            if cached_result is not None and cached_logits is not None:
+                base_probs = cached_result
+                base_logits = cached_logits
+            else:
                 try:
-                    probabilities = self._call_api(prompt, question_id, model_name, temp)
-                    self.cache.set(cache_key, model_name, temp, probabilities)
-                    results[model_name][temp] = probabilities
-
+                    base_probs, base_logits = self._call_api(prompt, question_id, model_name, base_temp)
+                    self.cache.set(cache_key, model_name, base_temp, base_probs)
+                    self.cache.set(f"{cache_key}_logits", model_name, base_temp, base_logits)
                 except Exception as e:
-                    self.logger.error(f"Error in LLM call for {question_id} with {model_name}, temp {temp}: {e}")
+                    self.logger.error(f"Error in LLM call: {e}")
                     n_options = len(self.rubric[question_id]["options"])
-                    results[model_name][temp] = [1.0 / n_options] * n_options
+                    base_probs = [1.0 / n_options] * n_options
+                    base_logits = [np.log(1.0 / n_options)] * n_options
+
+            # Store base temperature result
+            results[model_name][base_temp] = base_probs
+            
+            # Scale for other temperatures
+            base_logits_array = np.array(base_logits)
+            for temp in temps[:-1]:  # Skip the base temp
+                scaled_logits = self._scale_logits_with_temp(base_logits_array, base_temp, temp)
+                scaled_probs = np.exp(scaled_logits) / np.sum(np.exp(scaled_logits))
+                results[model_name][temp] = scaled_probs.tolist()
+                
+                # Cache the scaled results too
+                self.cache.set(f"{question_id}-{prompt}-{model_name}-{temp}", 
+                             model_name, temp, scaled_probs.tolist())
 
         return results
 
