@@ -42,6 +42,21 @@ class OpenAILLMCaller:
         self.rubric = rubric
         self.logger = logger
 
+    def _scale_logits_with_temp(self, logits: np.ndarray, old_temp: float, new_temp: float) -> np.ndarray:
+        """
+        Scale logits from one temperature to another.
+        
+        Args:
+            logits: Original logits array
+            old_temp: Temperature used for original sampling
+            new_temp: Target temperature
+            
+        Returns:
+            np.ndarray: Scaled logits
+        """
+        return logits * (old_temp/new_temp)
+
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def _call_api(self, prompt: str, question_id: str, model: str, temperature: float) -> List[float]:
         """
