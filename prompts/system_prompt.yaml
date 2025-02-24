@@ -1,4 +1,8 @@
+###
+# PLEASE DON'T CHANGE SYSTEM PROMPTS - CREATE COPIES AND MODIFY LOCALLY!
+###
+
 system_prompt:
   name: "Story Evaluation"
-  rubric_path: "D:\\University\\argolab\\LLMRubric\\prompts\\rubric.yaml"
-  prompt: "You are given a story created written by an author based on a prompt. Your primary job is to evaluate the story based on a criteria. To do so, read the prompt and the story, and then answer the followed question, by selecting one of the choices.\n\n\nPrompt and Story: {TEXT}\n\nQuestion: **{QUESTION}**\n\nOptions:\n{OPTIONS}\n\nOnly print the number corresponding to your answer choice."
+  rubric_path: "/export/fs06/psingh54/LLMRubric/prompts/rubric.yaml"
+  prompt: "You are given a story created written by an author based on a prompt. Your primary job is to evaluate the story based on a criteria. To do so, read the prompt and the story, and then answer the followed question, by selecting one of the choices.\n\n\nPrompt and Story: {TEXT}\n\nQuestion: **{QUESTION}**\n\nOptions:\n{OPTIONS}\n\nOnly print the number corresponding to your answer choice. THE ONLY ACCEPTABLE OUTPUT IS NUMBERS DEFINED IN THE OPTIONS. NO TEXT!"

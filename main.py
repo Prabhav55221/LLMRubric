@@ -51,7 +51,6 @@ def main():
     Main function to evaluate a conversation using an LLM and a predefined rubric.
     """
     
-    # TODO: Add options to calibrate once implemented.
     parser = argparse.ArgumentParser(description="LLM-RUBRIC Conversation Evaluation")
     parser.add_argument("--dataset", type=str, required=True, help="Path to Dataset YAML. Ensure it follows structure shown in ReadMe!")
     parser.add_argument("--output", type=str, default="/export/fs06/psingh54/LLMRubric/outputs", help="Output directory for logs and intermediate outputs.")
@@ -89,7 +88,7 @@ def main():
         logger.info(f"Stage 0: Starting LLM Evaluation for {experiment_name} with {len(judges.keys())}.")
 
         # Initialize evaluator and LLM caller
-        evaluator = LLMEvaluator(rubric_guide)
+        evaluator = LLMEvaluator(rubric_guide, logger)
         llm_caller = OpenAILLMCaller(config, evaluator.rubric, logger)
 
         # Load Dataset

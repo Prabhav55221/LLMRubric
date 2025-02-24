@@ -13,7 +13,10 @@ import logging
 from typing import List, Optional, Dict, Union
 import numpy as np
 from src.config import Config
+from src.template_parser import TemplateParser
 from src.utils import CacheManager, EvaluationResult
+from openai.types import ResponseFormatJSONSchema
+from structured_logprobs import add_logprobs
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 class OpenAILLMCaller:
@@ -55,10 +58,51 @@ class OpenAILLMCaller:
             np.ndarray: Scaled logits
         """
         return logits * (old_temp/new_temp)
+    
+    def _prepare_openai_schema(self, schema: Dict) -> Dict:
+        """
+        Transforms our rubric JSON schema into OpenAI's expected format.
+        
+        Args:
+            schema: Original schema from rubric
+            
+        Returns:
+            Dict formatted to match OpenAI's JSON schema requirement exactly
+        """
 
+        # Get all property names
+        all_properties = list(schema["properties"].keys())
+        
+        openai_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "json_schema",
+                "description": "schema_to_follow_for_output",
+                "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": all_properties,
+                    "additionalProperties": False
+                },
+                "strict": True
+            }
+        }
+        
+        for field, field_schema in schema["properties"].items():
+            min_val = field_schema.get("minimum", 1)
+            max_val = field_schema.get("maximum", self.config.num_option)
+            allowed_values = list(range(min_val, max_val + 1))
+            
+            openai_format["json_schema"]["schema"]["properties"][field] = {
+                "type": "number",
+                "enum": allowed_values,
+                "description": field_schema.get("description", "")
+            }
+        
+        return openai_format
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def _call_api(self, prompt: str, question_id: str, model: str, temperature: float) -> List[float]:
+    def _call_api(self, prompt: str, question_id: str, model: str, temperature: float) -> Dict:
         """
         Calls OpenAI API and retrieves log probabilities for options.
 
@@ -69,52 +113,148 @@ class OpenAILLMCaller:
             temperature (float): Temperature to sample at
 
         Returns:
-            List[float]: A list of unnormalized probabilities corresponding to options.
-
-        If an error occurs, returns a uniform probability distribution.
+            Dict: For regular questions:
+                {
+                    "probabilities": List[float],
+                    "logits": List[float]
+                }
+                For JSON questions:
+                {
+                    field_name: {
+                        "probabilities": List[float],
+                        "logits": List[float]
+                    }
+                }
         """
-
         try:
+            
             if question_id not in self.rubric:
                 raise ValueError(f"Question ID {question_id} not found in rubric.")
 
             question_data = self.rubric[question_id]
-            options = question_data["options"]
-            n_options = len(options)
 
-            response = self.client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=model,
-                temperature=temperature,
-                max_tokens=n_options,
-                logprobs=True,
-                top_logprobs=n_options
-            )
+            # Base API parameters
+            api_params = {
+                "messages": [{"role": "user", "content": prompt}],
+                "model": model,
+                "temperature": temperature,
+                "logprobs": True,
+                "top_logprobs": self.config.num_options
+            }
 
-            # Extract log-probabilities
-            token_logprobs: Dict[str, float] = {}
-            for i in response.choices[0].logprobs.content[0].top_logprobs:
-                token = i.token.strip()
-                logprob = i.logprob
-                if int(token) in options.keys():
-                    token_logprobs[token] = float(logprob)
+            if question_data.get("type") == "json_question":
 
-            # Create logits array
-            logits_array = np.array([
-                token_logprobs.get(str(i + 1), float('-inf')) 
-                for i in range(n_options)
-            ])
+                # JSON response handling
+                schema = question_data["json_schema"]
+                open_ai_schema = self._prepare_openai_schema(schema)
+                
+                api_params.update({
+                    "max_tokens": 1000,
+                    "response_format": open_ai_schema.model_dump(by_alias=True)
+                })
 
-            # Get probabilities
-            probs = np.exp(logits_array)
-            
-            return probs.tolist(), logits_array.tolist()
+                response = self.client.chat.completions.create(**api_params)
+                completion_with_probs = add_logprobs(response)
+                parsed_response = json.loads(response.choices[0].message.content)
+                
+                result = {}
+        
+                for field, field_schema in schema["properties"].items():
+
+                    logits = [float('-inf')] * self.config.num_options
+                    value = parsed_response.get(field)
+                    
+                    # Find logprob for this value from completion_with_probs
+                    if value is not None and 1 <= value <= self.config.num_options:
+
+                        value_str = str(value)
+                        for token_info in completion_with_probs.value.choices[0].logprobs.content:
+
+                            if token_info.token.strip() == value_str:
+
+                                logits[value - 1] = token_info.logprob
+                                for top_logprob in token_info.top_logprobs:
+                                    try:
+                                        other_value = int(top_logprob.token.strip())
+                                        if 1 <= other_value <= 5:
+                                            logits[other_value - 1] = max(logits[other_value - 1], 
+                                                                        top_logprob.logprob)
+                                    except ValueError:
+                                        continue
+                                break
+                    
+                    probs = np.exp(logits)
+                    total_prob = np.sum(probs)
+                    
+                    if total_prob > 0:
+                        probs = probs / total_prob
+                    else:
+                        probs = np.ones(5) / 5
+                        logits = [np.log(0.2)] * 5
+                    
+                    result[field] = {
+                        "probabilities": probs.tolist(),
+                        "logits": logits
+                    }
+                
+            else:
+
+                n_options = len(question_data["options"])
+                api_params.update({
+                    "max_tokens": n_options,
+                    "top_logprobs": n_options
+                })
+
+                response = self.client.chat.completions.create(**api_params)
+                
+                token_logprobs = {}
+                valid_options = set(str(k) for k in question_data["options"].keys())
+                
+                for logprob_info in response.choices[0].logprobs.content[0].top_logprobs:
+                    token = logprob_info.token.strip()
+                    if token in valid_options:
+                        token_logprobs[token] = float(logprob_info.logprob)
+                
+                # Create logits array preserving option order
+                logits = [token_logprobs.get(str(i), float('-inf')) 
+                        for i in range(1, n_options + 1)]
+                
+                # Convert to probabilities
+                logits_array = np.array(logits)
+                probs = np.exp(logits_array)
+                total_prob = np.sum(probs)
+                
+                if total_prob > 0:
+                    probs = probs / total_prob
+                else:
+                    # If no valid probabilities, use uniform distribution
+                    probs = np.ones(n_options) / n_options
+                    logits = [np.log(1.0 / n_options)] * n_options
+                
+                return {
+                    "probabilities": probs.tolist(),
+                    "logits": logits
+                }
 
         except Exception as e:
             self.logger.error(f"Error in API call for {question_id}: {e}")
-            uniform_prob = [1.0 / n_options] * n_options
-            uniform_logit = [np.log(1.0 / n_options)] * n_options
-            return uniform_prob, uniform_logit
+            
+            if question_data.get("type") == "json_question":
+                # Return uniform distributions for all JSON fields
+                return {
+                    field: {
+                        "probabilities": [1.0 / field_schema.get("maximum", self.config.num_option)] * field_schema.get("maximum", self.config.num_option),
+                        "logits": [np.log(1.0 / field_schema.get("maximum", self.config.num_option))] * field_schema.get("maximum", self.config.num_option)
+                    }
+                    for field, field_schema in question_data["json_schema"]["properties"].items()
+                }
+            else:
+                # Return uniform distribution for regular question
+                n_options = len(question_data["options"])
+                return {
+                    "probabilities": [1.0 / n_options] * n_options,
+                    "logits": [np.log(1.0 / n_options)] * n_options
+                }
 
     def __call__(self, prompt: str, question_id: str) -> List[float]:
         """
@@ -163,7 +303,7 @@ class OpenAILLMCaller:
             
             # Scale for other temperatures
             base_logits_array = np.array(base_logits)
-            for temp in temps[:-1]:  # Skip the base temp
+            for temp in temps[:-1]:
                 scaled_logits = self._scale_logits_with_temp(base_logits_array, base_temp, temp)
                 scaled_probs = np.exp(scaled_logits) / np.sum(np.exp(scaled_logits))
                 results[model_name][temp] = scaled_probs.tolist()
@@ -183,7 +323,7 @@ class LLMEvaluator:
         prompt_template (str): The pre-defined prompt format for evaluation.
     """
 
-    def __init__(self, system_path: str):
+    def __init__(self, system_path: str, logger):
         """
         Initializes the evaluator by loading the rubric from a YAML or JSON file.
 
@@ -193,6 +333,25 @@ class LLMEvaluator:
         self.prompt_template = ''
         rubric_path = self._load_system(system_path)
         self.rubric = self._load_rubric(rubric_path)
+        self.template_parser = TemplateParser()
+        self.logger = logger
+
+    def _check_question_condition(self, question_data: Dict, previous_answers: Dict[str, int]) -> bool:
+        """
+        Checks if conditions are met to evaluate this question.
+        
+        Args:
+            question_data: Question definition from rubric
+            previous_answers: Dict of question_id to score for previous questions
+            
+        Returns:
+            bool: Whether the question should be evaluated
+        """
+        if "conditional" not in question_data:
+            return True
+            
+        condition = self.template_parser.extract_condition(question_data["conditional"])
+        return self.template_parser.evaluate_condition(condition, previous_answers)
 
     def _load_system(self, path: str) -> str:
         """
@@ -264,14 +423,49 @@ class LLMEvaluator:
             raise ValueError(f"Invalid question ID: {question_id}")
 
         question_data = self.rubric[question_id]
-        formatted_options = self._format_options(question_data["options"])
 
-        return self.prompt_template.format(
-            TEXT=text_unit,
-            QUESTION=question_data["prompt"],
-            OPTIONS=formatted_options
-        )
-    
+        if question_data.get("type") == "json_question":
+            
+            # Format JSON question prompt
+            schema = question_data["json_schema"]
+            rating_scales = question_data.get("rating_scales", {})
+            
+            prompt_parts = []
+            prompt_parts.append(question_data["prompt"])
+            
+            # Add schema requirements
+            prompt_parts.append("\nPlease provide ratings for the following:")
+            for field, props in schema["properties"].items():
+                description = props.get("description", "")
+                prompt_parts.append(f"\n{field}: {description}")
+                
+                # Add rating scale if provided
+                if field in rating_scales:
+                    prompt_parts.append("Scale:")
+                    for score, desc in rating_scales[field].items():
+                        prompt_parts.append(f"  {score}: {desc}")
+            
+            # Add input text
+            prompt_parts.append(f"\nText to evaluate:\n{text_unit}")
+            
+            # Add format instructions
+            prompt_parts.append("\nProvide response in valid JSON format with numerical ratings.")
+            if schema.get("required"):
+                required_fields = ", ".join(schema["required"])
+                prompt_parts.append(f"\nRequired fields: {required_fields}")
+                
+            return "\n".join(prompt_parts)
+        
+        else:
+
+            formatted_options = self._format_options(question_data["options"])
+
+            return self.prompt_template.format(
+                TEXT=text_unit,
+                QUESTION=question_data["prompt"],
+                OPTIONS=formatted_options
+            )
+
     def evaluate_conversation(self, text_unit: str, llm_caller) -> List[EvaluationResult]:
         """
         Create object of type EvaluationResult.
@@ -288,16 +482,44 @@ class LLMEvaluator:
         results = []
         
         for model_name, model_config in llm_caller.config.models.items():
+
             for temp in model_config.temperatures:
+
                 result = EvaluationResult()
                 result.model = model_name
                 result.temperature = temp
                 
-                for q_id in self.rubric.keys():
-                    prompt = self.generate_prompt(text_unit, q_id)
-                    probs = llm_caller(prompt, q_id)[model_name][temp]
-                    result.add_result(q_id, probs)
+                # Track answers to evaluate conditions
+                previous_answers = {}
+                
+                question_order = [f"Q{i}" for i in range(1, Config.num_questions)] + ["Q0"]
+                
+                for q_id in question_order:
+                    if q_id not in self.rubric:
+                        continue
+                        
+                    q_data = self.rubric[q_id]
+                    conditional = self._check_question_condition(q_data, previous_answers)
+                    self.logger.info(str(conditional))
+                    
+                    if conditional == True:
+
+                        # Get LLM probabilities
+                        prompt = self.generate_prompt(text_unit, q_id)
+                        probs = llm_caller(prompt, q_id)[model_name][temp]
+                        result.add_result(q_id, probs)
+                        
+                        most_likely_score = max(range(len(probs)), 
+                                              key=lambda i: probs[i]) + 1
+                        previous_answers[q_id] = most_likely_score
+
+                    else:
+
+                        num_options = len(q_data["options"])
+                        uniform_probs = [1.0 / num_options] * num_options
+                        result.add_result(q_id, uniform_probs)
                 
                 results.append(result)
-
+                
         return results
+    

@@ -1,3 +1,7 @@
+###
+# PLEASE DON'T CHANGE RUBRIC - CREATE COPIES AND MODIFY LOCALLY!
+###
+
 rubric:
   Q1:
     question_id: "Q1"
@@ -76,6 +80,106 @@ rubric:
       5: "Very Complex"
     scale_type: "ordinal"
     response_type: "multiple_choice"
+
+  Q7:
+    question_id: "Q7"
+    category: "Complex Engagement"
+    prompt: "Given the high complexity and engagement of this story, how well does it maintain reader interest while delivering sophisticated content?"
+    options:
+      1: "Poor balance"
+      2: "Fair balance" 
+      3: "Good balance"
+      4: "Excellent balance"
+      5: "Perfect balance"
+    scale_type: "ordinal"
+    response_type: "multiple_choice"
+    conditional: "{% if Q6 > 3 and Q5 > 3 %}"
+
+  # UNUSED BUT SHOWN HERE FOR SAMPLE
+
+  # Q8:
+  #   question_id: "Q8"
+  #   category: "Detailed Narrative Analysis"
+  #   type: "json_question"
+  #   prompt: "Provide a detailed analysis of the story by rating the following narrative elements. Return your response as a JSON object with numerical ratings from 1-5 for each element."
+  #   json_schema: {
+  #     "type": "object",
+  #     "properties": {
+  #       "plot_structure": {
+  #         "type": "number",
+  #         "minimum": 1,
+  #         "maximum": 5,
+  #         "description": "Rating of overall story structure and plot development"
+  #       },
+  #       "character_arc": {
+  #         "type": "number", 
+  #         "minimum": 1,
+  #         "maximum": 5,
+  #         "description": "Quality of character development throughout story",
+  #         "conditional": "plot_structure >= 3"
+  #       },
+  #       "theme_strength": {
+  #         "type": "number",
+  #         "minimum": 1,
+  #         "maximum": 5, 
+  #         "description": "How effectively themes are developed",
+  #         "conditional": "plot_structure >= 3"
+  #       },
+  #       "narrative_technique": {
+  #         "type": "number",
+  #         "minimum": 1,
+  #         "maximum": 5,
+  #         "description": "Sophistication of storytelling methods used",
+  #         "conditional": "plot_structure >= 3"
+  #       },
+  #       "pacing": {
+  #         "type": "number",
+  #         "minimum": 1,
+  #         "maximum": 5,
+  #         "description": "How well the story maintains appropriate pacing",
+  #         "conditional": "plot_structure >= 3"
+  #       }
+  #     },
+  #     "required": ["plot_structure"]
+  #   }
+  #   rating_scales: {
+  #     "plot_structure": {
+  #       "1": "Poor/nonexistent structure",
+  #       "2": "Basic but flawed structure",
+  #       "3": "Adequate structure",
+  #       "4": "Well-developed structure",
+  #       "5": "Masterful structure"
+  #     },
+  #     "character_arc": {
+  #       "1": "No character development",
+  #       "2": "Minimal development",
+  #       "3": "Clear development",
+  #       "4": "Strong development",
+  #       "5": "Exceptional development"
+  #     },
+  #     "theme_strength": {
+  #       "1": "No clear themes",
+  #       "2": "Weak/unclear themes",
+  #       "3": "Present but basic themes",
+  #       "4": "Strong themes",
+  #       "5": "Complex, well-developed themes"
+  #     },
+  #     "narrative_technique": {
+  #       "1": "Basic/poor technique",
+  #       "2": "Limited techniques",
+  #       "3": "Competent techniques",
+  #       "4": "Skilled techniques",
+  #       "5": "Masterful techniques"
+  #     },
+  #     "pacing": {
+  #       "1": "Poor pacing",
+  #       "2": "Inconsistent pacing",
+  #       "3": "Adequate pacing",
+  #       "4": "Good pacing",
+  #       "5": "Excellent pacing"
+  #     }
+  #   }
+  #   response_type: "json"
 
   Q0:
     question_id: "Q0"

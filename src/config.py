@@ -55,8 +55,8 @@ class Config:
     
     # Model Configs
     models: Dict[str, LLMConfig] = field(default_factory=lambda: {
-        "gpt-3.5-turbo-16k": LLMConfig(temperatures=[0.1, 0.8]),
-        "gpt-3.5-turbo-0125": LLMConfig(temperatures=[0.1, 0.8])
+        "gpt-4o-2024-08-06": LLMConfig(temperatures=[0.8]),
+        "gpt-4-turbo-2024-04-09": LLMConfig(temperatures=[0.8])
     })
     
     # Cache and API Configs
@@ -67,7 +67,7 @@ class Config:
     cache_expiry_days: int = 7
     
     # Calibration Configs  
-    num_questions: int = 7
+    num_questions: int = 8
     num_judges: int = 15
     num_options: int = 5
     
@@ -79,10 +79,10 @@ class Config:
 
     # Parameter Grid for GridCV
     param_grid: dict = field(default_factory=lambda: {
-        "h1": [32, 64],
-        "h2": [64, 128],
+        "h1": [128],
+        "h2": [256],
         "batch_size": [16, 32],
-        "lr": [0.001, 0.01, 0.1],
+        "lr": [0.001, 0.01, 0.05],
         "num_epochs": [50]
     })
 
